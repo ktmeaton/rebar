@@ -1,25 +1,35 @@
 use crate::utils;
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};
 use itertools::Itertools;
+use std::cmp::PartialEq;
 use std::default::Default;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
-pub struct Table {
-    pub headers: Vec<String>,
-    pub rows: Vec<Vec<String>>,
+pub struct Table<T>
+where
+    T: PartialEq + ToString,
+{
+    pub headers: Vec<T>,
+    pub rows: Vec<Vec<T>>,
     pub path: PathBuf,
 }
 
-impl Default for Table {
+impl<T> Default for Table<T>
+where
+    T: PartialEq + ToString,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Table {
+impl<T> Table<T>
+where
+    T: PartialEq + ToString,
+{
     pub fn new() -> Self {
         Table {
             path: PathBuf::new(),
@@ -28,27 +38,18 @@ impl Table {
         }
     }
 
-    pub fn read(path: &Path) -> Result<Table, Report> {
+    pub fn read(path: &Path) -> Result<Table<String>, Report> {
         let mut table = Table::new();
 
         // lookup delimiter from file extension
         let delim = utils::path_to_delim(path)?;
 
         // attempt to open the file path
-        let file =
-            File::open(path).wrap_err_with(|| eyre!("Failed to read file: {path:?}"))?;
-        // read in the lines
-        let lines = BufReader::new(file).lines();
-        //.map_err(|e| eyre!(e))
-        //.wrap_err_with(|| eyre!("Failed to parse file: {path:?}"))?;
+        let file = File::open(path).wrap_err_with(|| eyre!("Failed to read file: {path:?}"))?;
 
-        for line in lines.flatten() {
-            let row = line
-                .split(delim)
-                .collect_vec()
-                .into_iter()
-                .map(String::from)
-                .collect_vec();
+        // read and parse lines
+        for line in BufReader::new(file).lines().flatten() {
+            let row = line.split(delim).collect_vec().into_iter().map(String::from).collect_vec();
             // if headers are empty, this is the first line, write headers
             if table.headers.is_empty() {
                 table.headers = row;
@@ -65,30 +66,37 @@ impl Table {
     }
 
     pub fn header_position(&self, header: &str) -> Result<usize, Report> {
-        let pos = self.headers.iter().position(|h| h == header).ok_or_else(|| {
-            eyre!("Column '{header}' was not found in table: {:?}.", self.path)
-        })?;
+        let pos =
+            self.headers.iter().position(|h| h == header).ok_or_else(|| {
+                eyre!("Column '{header}' was not found in table: {:?}.", self.path)
+            })?;
 
         Ok(pos)
     }
 
-    pub fn filter(&self, header: &str, pattern: &str) -> Result<Table, Report> {
+    pub fn get(&self, header: &str) -> Result<&[T], Report> {
+        let header_i = self.header_position(header)?;
+        Ok(&self.rows[header_i])
+    }
+
+    pub fn set(&mut self, header: &str, row: usize, value: T) -> Result<(), Report> {
+        let header_i = self.header_position(header)?;
+        self.rows[row][header_i] = value;
+        Ok(())
+    }
+
+    pub fn filter(&self, header: &str, pattern: &str) -> Result<Table<T>, Report> {
         let mut table = Table::new();
         let header_i = self.header_position(header)?;
         table.headers = self.headers.clone();
-        table.rows = self
-            .rows
-            .iter()
-            .filter(|row| row[header_i] == pattern)
-            .cloned()
-            .collect_vec();
+        table.rows = self.rows.iter().filter(|row| row[header_i] == pattern).cloned().collect_vec();
         Ok(table)
     }
 
     /// write to file
     pub fn write(&self, path: &Path) -> Result<(), Report> {
-        let mut file = File::create(path)
-            .wrap_err_with(|| format!("Unable to create file: {path:?}"))?;
+        let mut file =
+            File::create(path).wrap_err_with(|| format!("Unable to create file: {path:?}"))?;
 
         // Parse line delimiter from file extension
         let delim = utils::path_to_delim(path)?.to_string();

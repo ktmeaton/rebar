@@ -3,8 +3,7 @@ use color_eyre::eyre::{Report, Result};
 use itertools::Itertools;
 
 /// Create Toy1 genome annotations.
-pub fn build() -> Result<Table, Report> {
-    let mut table = Table::new();
+pub fn build() -> Result<Table<String>, Report> {
 
     let headers = vec!["gene", "abbreviation", "start", "end"];
     let rows = vec![
@@ -12,12 +11,9 @@ pub fn build() -> Result<Table, Report> {
         vec!["Gene2", "g2", "12", "20"],
     ];
 
-    // Convert values to String
-    table.headers = headers.into_iter().map(String::from).collect_vec();
-    table.rows = rows
-        .into_iter()
-        .map(|row| row.into_iter().map(String::from).collect_vec())
-        .collect_vec();
+    let mut table = Table::new();
+    table.headers = headers.into_iter().map(String::from).collect();
+    table.rows = rows.into_iter().map(|r| r.into_iter().map(String::from).collect()).collect();
 
     Ok(table)
 }

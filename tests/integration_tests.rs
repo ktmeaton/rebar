@@ -45,8 +45,7 @@ async fn toy1() -> Result<(), Report> {
 
 #[tokio::test]
 async fn sarscov2_populations() -> Result<(), Report> {
-    let output_dir =
-        PathBuf::from("output").join("tests").join("sarscov2").join("populations");
+    let output_dir = PathBuf::from("output").join("tests").join("sarscov2").join("populations");
 
     // Dataset Download
     let mut args = cli::dataset::download::Args {

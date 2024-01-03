@@ -1,8 +1,8 @@
 use crate::cli;
-use crate::dataset;
 use crate::dataset::attributes::{check_compatibility, Name, Summary};
-use crate::dataset::{sarscov2, toy1};
-use crate::{utils, utils::remote_file::RemoteFile};
+use crate::dataset::{sarscov2, toy1, Dataset};
+use crate::{dataset, dataset::load};
+use crate::{utils, utils::remote_file::RemoteFile, utils::table::Table};
 use color_eyre::eyre::{Report, Result};
 use itertools::Itertools;
 use log::{info, warn};
@@ -10,7 +10,7 @@ use std::fs::create_dir_all;
 use std::path::Path;
 
 /// Download dataset
-pub async fn dataset(args: &mut cli::dataset::download::Args) -> Result<(), Report> {
+pub async fn dataset(args: &mut cli::dataset::download::Args) -> Result<Dataset, Report> {
     info!("Downloading dataset: {} {}", &args.name, &args.tag);
 
     // --------------------------------------------------------------------
@@ -61,9 +61,7 @@ pub async fn dataset(args: &mut cli::dataset::download::Args) -> Result<(), Repo
         snapshot(&summary.reference, &output_path).await?
     } else {
         match args.name {
-            Name::SarsCov2 => {
-                sarscov2::download::reference(&args.tag, &output_path).await?
-            }
+            Name::SarsCov2 => sarscov2::download::reference(&args.tag, &output_path).await?,
             Name::Toy1 => toy1::download::reference(&args.tag, &output_path)?,
             _ => todo!(),
         }
@@ -79,9 +77,7 @@ pub async fn dataset(args: &mut cli::dataset::download::Args) -> Result<(), Repo
         dataset::download::snapshot(&summary.populations, &output_path).await?
     } else {
         match args.name {
-            Name::SarsCov2 => {
-                sarscov2::download::populations(&args.tag, &output_path).await?
-            }
+            Name::SarsCov2 => sarscov2::download::populations(&args.tag, &output_path).await?,
             Name::Toy1 => toy1::download::populations(&args.tag, &output_path)?,
             _ => todo!(),
         }
@@ -107,9 +103,7 @@ pub async fn dataset(args: &mut cli::dataset::download::Args) -> Result<(), Repo
     info!("Building phylogeny: {output_path:?}");
 
     let phylogeny = match args.name {
-        Name::SarsCov2 => {
-            sarscov2::phylogeny::build(&mut summary, &args.output_dir).await?
-        }
+        Name::SarsCov2 => sarscov2::phylogeny::build(&mut summary, &args.output_dir).await?,
         Name::Toy1 => toy1::phylogeny::build()?,
         _ => todo!(),
     };
@@ -130,7 +124,6 @@ pub async fn dataset(args: &mut cli::dataset::download::Args) -> Result<(), Repo
         &summary.reference.local_path,
         &mask,
     )?;
-    dataset::write_mutations(&mutations, &output_path)?;
 
     // --------------------------------------------------------------------
     // Create Edge Cases
@@ -146,49 +139,51 @@ pub async fn dataset(args: &mut cli::dataset::download::Args) -> Result<(), Repo
         Name::Toy1 => dataset::toy1::edge_cases::default()?,
         _ => todo!(),
     };
-    let manual_populations =
-        edge_cases.iter().filter_map(|e| e.population.clone()).collect_vec();
+    let manual_populations = edge_cases.clone().into_iter().filter_map(|e| e.population).collect_vec();
 
-    let problematic_recombinants = phylogeny.get_problematic_recombinants()?;
-    for recombinant in problematic_recombinants {
-        let parents = phylogeny.get_parents(&recombinant)?;
-        warn!("Recombinant {recombinant} is problematic. Parents are not sister taxa: {parents:?}");
-        if manual_populations.contains(&recombinant) {
-            warn!("Manual edge case exists: {recombinant:?}");
+    phylogeny.get_problematic_recombinants()?.into_iter().try_for_each(|r| {
+        //let recombinant = r.to_string();
+        let parents = phylogeny.get_parents(r)?;
+        warn!("Recombinant {r} is problematic. Parents are not sister taxa: {parents:?}");
+        if manual_populations.contains(&r.to_string()) {
+            warn!("Manual edge case exists: {r:?}");
         } else {
-            warn!("Creating auto edge case: {recombinant:?}");
-            let edge_case = cli::run::Args {
-                population: Some(recombinant),
-                parents: Some(parents),
-                ..Default::default()
-            };
+            warn!("Creating auto edge case: {r:?}");
+            let population = Some(r.to_string());
+            let parents = Some(parents.to_vec().into_iter().map(String::from).collect());
+            let edge_case = cli::run::Args { population, parents, ..Default::default() };
             edge_cases.push(edge_case);
         }
-    }
 
-    // Reminder, we use the module write  method, not the struct method,
-    // because this is a vector of arguments we need to serialize.
-    cli::run::Args::write(&edge_cases, &output_path)?;
+        Ok::<(), Report>(())
+    });
 
     // --------------------------------------------------------------------
-    // Export Summary
+    // Export
 
-    let output_path = args.output_dir.join("summary.json");
-    info!("Exporting summary: {output_path:?}");
-    summary.write(&output_path)?;
+    let dataset = load::dataset(&args.output_dir, &mask)?;
+
+    let path = args.output_dir.join("edge_cases.json");
+    info!("Exporting edge cases: {path:?}");
+    dataset.write_edge_cases(&path)?;
+
+    let path = args.output_dir.join("mutations.tsv");
+    info!("Exporting mutations: {path:?}");
+    dataset.write_mutations(&path)?;
+
+    let path = args.output_dir.join("summary.json");
+    info!("Exporting summary: {path:?}");
+    dataset.write_summary(&path)?;
 
     // --------------------------------------------------------------------
     // Finish
 
     info!("Done.");
-    Ok(())
+    Ok(dataset)
 }
 
 /// Download remote file from a summary snapshot.
-pub async fn snapshot(
-    snapshot: &RemoteFile,
-    output_path: &Path,
-) -> Result<RemoteFile, Report> {
+pub async fn snapshot(snapshot: &RemoteFile, output_path: &Path) -> Result<RemoteFile, Report> {
     // Check extension for decompression
     let ext = utils::path_to_ext(Path::new(&snapshot.url))?;
     let decompress = ext == "zst";

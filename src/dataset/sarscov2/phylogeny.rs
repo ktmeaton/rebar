@@ -9,10 +9,10 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-pub async fn build(
+pub async fn build<'phylo>(
     summary: &mut dataset::attributes::Summary,
     output_dir: &Path,
-) -> Result<Phylogeny, Report> {
+) -> Result<Phylogeny<'phylo>, Report> {
     // ------------------------------------------------------------------------
     // Download
     // ------------------------------------------------------------------------
@@ -76,18 +76,15 @@ pub async fn build(
 
     // read lineage notes into Table
     let lineage_notes_path = &summary.misc["lineage_notes"].local_path;
-    let lineage_notes_file_name =
-        lineage_notes_path.file_name().unwrap().to_str().unwrap();
-    let lineage_table = Table::read(lineage_notes_path)?;
+    let lineage_notes_file_name = lineage_notes_path.file_name().unwrap().to_str().unwrap();
+    let lineage_table = Table::<String>::read(lineage_notes_path)?;
     // identify which column is 'Lineage'
     let lineage_col_i = lineage_table.header_position("Lineage")?;
     // get a list of lineages in the notes
     let notes_lineages = lineage_table
         .rows
         .iter()
-        .filter(|row| {
-            !row[lineage_col_i].starts_with('*') && row[lineage_col_i].is_empty()
-        })
+        .filter(|row| !row[lineage_col_i].starts_with('*') && row[lineage_col_i].is_empty())
         .map(|row| row[lineage_col_i].to_string())
         .collect_vec();
 
@@ -141,13 +138,14 @@ pub async fn build(
 
     // Add descendants
     for name in graph_order {
+        // mutable borrow of phylogeny.graph
         let id = phylogeny.graph.add_node(name.clone());
-        if !graph_data.contains_key(&name) {
+        // get node name as owned by the phylogeny now
+        let node_name = phylogeny.get_name(&id)?;
+        if !graph_data.contains_key(node_name) {
             return Err(
                 eyre!("Parents of {name} are unknown in the phylogeny graph.")
-                    .suggestion(
-                        "Could the lineage_notes be out of order or misformatted?",
-                    )
+                    .suggestion("Could the lineage_notes be out of order or misformatted?")
                     .suggestion("Parents are required to appear before children."),
             );
         }
@@ -157,22 +155,24 @@ pub async fn build(
 
         // If multiple parents add this to recombinants list
         if parents.len() > 1 {
-            phylogeny.recombinants.push(name.clone());
+            // use name as owned by graph
+            // todo!()
+            //phylogeny.recombinants.push(node_name);
         }
+
         for parent in parents {
             if phylogeny.get_node(parent).is_err() {
                 return Err(eyre!("Parental lineage {parent} is not in the graph.")
-                    .suggestion(
-                        "Are the alias_key.json and lineage_notes.txt out of sync?",
-                    )
+                    .suggestion("Are the alias_key.json and lineage_notes.txt out of sync?")
                     .suggestion("Please check if {parent} is in the alias key."));
             }
             let parent_id = phylogeny.get_node(parent)?;
-            phylogeny.graph.add_edge(parent_id, id, 1);
+            phylogeny.graph.add_edge(*parent_id, id, 1);
         }
     }
 
-    phylogeny.recombinants_all = phylogeny.get_recombinants_all()?;
+    let descendants = true;
+    //phylogeny.recombinants_all = phylogeny.get_recombinants(descendants);
 
     // ------------------------------------------------------------------------
     // Consistency Check
@@ -191,10 +191,8 @@ pub async fn build(
 
     info!("Writing dataset inconsistency table: {inconsistency_table_path:?}");
 
-    inconsistency_table.headers = vec!["population", "present", "absent"]
-        .into_iter()
-        .map(String::from)
-        .collect_vec();
+    inconsistency_table.headers =
+        vec!["population", "present", "absent"].into_iter().map(String::from).collect_vec();
 
     let population_col_i = inconsistency_table.header_position("population")?;
     let present_col_i = inconsistency_table.header_position("present")?;
@@ -269,8 +267,7 @@ pub fn get_lineage_parents(
     let decompress = decompress_lineage(lineage, alias_key).unwrap();
 
     // Ex. BA.5.2 -> ["BA", "5", "2"]
-    let decompress_parts =
-        decompress.split('.').map(|p| p.to_string()).collect::<Vec<_>>();
+    let decompress_parts = decompress.split('.').map(|p| p.to_string()).collect::<Vec<_>>();
 
     // If just 1 part, parent is root (ex. A)
     let mut parent = String::from("root");
@@ -378,15 +375,12 @@ pub fn decompress_lineage(
 /// values are a vector of parents.
 pub fn read_alias_key(path: &Path) -> Result<BTreeMap<String, Vec<String>>, Report> {
     // read to json
-    let alias_key_str =
-        std::fs::read_to_string(path).expect("Couldn't read alias_key file.");
+    let alias_key_str = std::fs::read_to_string(path).expect("Couldn't read alias_key file.");
     let alias_key_val: serde_json::Value =
         serde_json::from_str(&alias_key_str).expect("Couldn't convert alias_key to json");
     // deserialize to object (raw, mixed types)
-    let alias_key_raw: serde_json::Map<String, serde_json::Value> = alias_key_val
-        .as_object()
-        .expect("Couldn't convert alias_key json to json Map")
-        .clone();
+    let alias_key_raw: serde_json::Map<String, serde_json::Value> =
+        alias_key_val.as_object().expect("Couldn't convert alias_key json to json Map").clone();
 
     // This should probably be a custom serializer fn for brevity,
     //   but I don't know how to do that yet :)
@@ -400,8 +394,7 @@ pub fn read_alias_key(path: &Path) -> Result<BTreeMap<String, Vec<String>>, Repo
             // If array, this is a recombinant alias with multiple parents.
             Some(parents) => {
                 for parent in parents {
-                    let parent =
-                        parent.as_str().expect("Couldn't convert parent to str.");
+                    let parent = parent.as_str().expect("Couldn't convert parent to str.");
                     // Strip the wildcard asterisks from lineage name
                     let parent_clean = str::replace(parent, "*", "");
                     lineage_paths.push(parent_clean);
@@ -409,10 +402,8 @@ pub fn read_alias_key(path: &Path) -> Result<BTreeMap<String, Vec<String>>, Repo
             }
             // Otherwise, it might be a string
             None => {
-                let mut lineage_path = lineage
-                    .as_str()
-                    .expect("Couldn't convert lineage to str.")
-                    .to_string();
+                let mut lineage_path =
+                    lineage.as_str().expect("Couldn't convert lineage to str.").to_string();
                 // If there is not lineage_path (ex. "" for A, B), set to self
                 if lineage_path.is_empty() {
                     lineage_path = alias.clone();

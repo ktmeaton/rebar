@@ -136,8 +136,7 @@ pub fn validate(
         // parent validation is already done in recombination::detect_recombination
         // to decide whether it's a novel variant or not. It seems wasteful to run it again...
 
-        let validate_parent =
-            compare_parents(observed_parents, &expected_parents, dataset)?;
+        let validate_parent = compare_parents(observed_parents, &expected_parents, dataset)?;
 
         // ----------------------------------------------------------------
         // Recombination Validation
@@ -222,10 +221,8 @@ pub fn compare_parents(
     observed.iter().for_each(|pop| {
         // get all possible paths from parent population to root
         // ex. BA.1 (single path), XE, (two paths, through BA.1, BA.2), XBL (four paths, recursive)
-        let paths = dataset
-            .phylogeny
-            .get_paths(pop, "root", Direction::Incoming)
-            .unwrap_or_default();
+        let paths =
+            dataset.phylogeny.get_paths(pop, "root", Direction::Incoming).unwrap_or_default();
         paths.iter().for_each(|populations| {
             for p in populations {
                 observed_parents.push(p.clone());
@@ -252,10 +249,8 @@ pub fn compare_parents(
     expected.iter().for_each(|pop| {
         // get all possible paths from parent population to root
         // ex. BA.1 (single path), XE, (two paths, through BA.1, BA.2), XBL (four paths, recursive)
-        let paths = dataset
-            .phylogeny
-            .get_paths(pop, "root", Direction::Incoming)
-            .unwrap_or_default();
+        let paths =
+            dataset.phylogeny.get_paths(pop, "root", Direction::Incoming).unwrap_or_default();
         paths.iter().for_each(|populations| {
             for p in populations {
                 expected_parents.push(p.clone());

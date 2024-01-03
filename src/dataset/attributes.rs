@@ -79,8 +79,7 @@ impl FromStr for Name {
             "rsv-a" => Name::RsvA,
             "rsv-b" => Name::RsvB,
             "custom" => Name::Custom,
-            _ => Err(eyre!("Unknown dataset name: {name}"))
-                .suggestion("Please choose from:")?,
+            _ => Err(eyre!("Unknown dataset name: {name}")).suggestion("Please choose from:")?,
         };
 
         Ok(name)
@@ -288,8 +287,8 @@ impl Summary {
     /// Write summary to file.
     pub fn write(&self, path: &Path) -> Result<(), Report> {
         // create output file
-        let mut file = File::create(path)
-            .wrap_err_with(|| format!("Failed to create file: {path:?}"))?;
+        let mut file =
+            File::create(path).wrap_err_with(|| format!("Failed to create file: {path:?}"))?;
 
         // parse to string
         let output = serde_json::to_string_pretty(self)

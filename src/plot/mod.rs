@@ -153,13 +153,8 @@ pub fn create(
     let reference_i = barcodes.header_position("Reference")?;
 
     // get genome_length, just use first
-    let genome_length = linelist
-        .rows
-        .iter()
-        .map(|row| &row[genome_length_i])
-        .next()
-        .unwrap()
-        .parse::<usize>()?;
+    let genome_length =
+        linelist.rows.iter().map(|row| &row[genome_length_i]).next().unwrap().parse::<usize>()?;
 
     // check if we should include/exclude private mutations
     if !all_coords {
@@ -197,18 +192,14 @@ pub fn create(
     }
 
     // get sequence ids (columns after mandatory cols and parents)
-    let sequence_ids =
-        barcodes.headers.iter().skip(3 + parents.len()).cloned().collect_vec();
+    let sequence_ids = barcodes.headers.iter().skip(3 + parents.len()).cloned().collect_vec();
 
     // search for sequence_ids in the linelist
     let strain_i = linelist.header_position("strain")?;
 
     // filter linelist down to just these samples
-    linelist.rows = linelist
-        .rows
-        .into_iter()
-        .filter(|row| sequence_ids.contains(&row[strain_i]))
-        .collect_vec();
+    linelist.rows =
+        linelist.rows.into_iter().filter(|row| sequence_ids.contains(&row[strain_i])).collect_vec();
 
     // make a list of all the populations/sequences we will plot
     // Reference, Parents, Sequences
@@ -231,8 +222,7 @@ pub fn create(
     let num_coords = barcodes.rows.len();
 
     // longest sequence text id (in pixels)
-    let mut default_ids =
-        vec!["Reference", "Private"].into_iter().map(String::from).collect_vec();
+    let mut default_ids = vec!["Reference", "Private"].into_iter().map(String::from).collect_vec();
     let mut sequence_ids_length_check = sequence_ids.clone();
     sequence_ids_length_check.append(&mut default_ids);
 
@@ -394,8 +384,7 @@ pub fn create(
     // iterate over parental regions in linelist
     let regions_i = linelist.header_position("regions")?;
     // they *should be all the same, just grab first
-    let regions =
-        &linelist.rows.iter().map(|row| row[regions_i].to_string()).next().unwrap();
+    let regions = &linelist.rows.iter().map(|row| row[regions_i].to_string()).next().unwrap();
     // 0-1000|parent1,1000-2000|parent2;
     let regions_split = regions.split(',').collect_vec();
 
@@ -648,8 +637,7 @@ pub fn create(
     // maximum number of coord labels we can fit
     let max_num_coords = num_coords as f32 / longest_coord_x_inc;
     // calculate interval, round up to next pretty number (ex. 500)
-    let coord_interval =
-        (((genome_length as f32 / max_num_coords) / 500.).ceil() * 500.) as usize;
+    let coord_interval = (((genome_length as f32 / max_num_coords) / 500.).ceil() * 500.) as usize;
 
     let mut ax_coords = (0..genome_length).step_by(coord_interval).collect_vec();
     ax_coords.push(genome_length);
@@ -699,12 +687,8 @@ pub fn create(
     args.vertical_alignment = text::VerticalAlignment::Center;
     text::draw_raqote(&mut args)?;
 
-    let breakpoints = linelist
-        .rows
-        .iter()
-        .flat_map(|row| row[breakpoints_i].split(','))
-        .unique()
-        .collect_vec();
+    let breakpoints =
+        linelist.rows.iter().flat_map(|row| row[breakpoints_i].split(',')).unique().collect_vec();
 
     let dash_stroke_style: StrokeStyle = StrokeStyle {
         cap: LineCap::Square,
@@ -731,8 +715,7 @@ pub fn create(
         //println!("{prev_region_end} {next_region_start}");
 
         // which subs does this fall between
-        let coord_prev_i =
-            coords.iter().position(|c| **c == prev_region_end.to_string()).unwrap();
+        let coord_prev_i = coords.iter().position(|c| **c == prev_region_end.to_string()).unwrap();
         let coord_next_i =
             coords.iter().position(|c| **c == next_region_start.to_string()).unwrap();
         //println!("\t{coord_prev_i} {coord_next_i}");
@@ -760,8 +743,7 @@ pub fn create(
         if (coord_next_i - coord_prev_i) <= 1 {
             // adjust the label line
             line_x = section_x
-                + (coord_prev_i + 1 + (coord_next_i - coord_prev_i) / 2) as f32
-                    * constants::X_INC;
+                + (coord_prev_i + 1 + (coord_next_i - coord_prev_i) / 2) as f32 * constants::X_INC;
 
             let draw_x = vec![line_x, line_x];
             let draw_y = vec![line_y2, line_y1];
@@ -778,8 +760,7 @@ pub fn create(
         else {
             // draw dashed grey box
             let box_x = section_x + ((coord_prev_i as f32 + 1.) * constants::X_INC);
-            let box_w =
-                (coord_next_i as f32 - coord_prev_i as f32 - 1.) * constants::X_INC;
+            let box_w = (coord_next_i as f32 - coord_prev_i as f32 - 1.) * constants::X_INC;
             let box_y = section_y
                 + (constants::X_INC * 3.) // this height of the breakpoints section
                 + sub_y_buff

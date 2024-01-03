@@ -181,8 +181,8 @@ impl Args {
     /// Write args to file.
     pub fn write(args: &[Args], path: &Path) -> Result<(), Report> {
         // create file
-        let mut file = File::create(path)
-            .wrap_err_with(|| format!("Failed to create file: {path:?}"))?;
+        let mut file =
+            File::create(path).wrap_err_with(|| format!("Failed to create file: {path:?}"))?;
 
         // parse to string
         let args = serde_json::to_string_pretty(args)

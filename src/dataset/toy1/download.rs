@@ -16,8 +16,8 @@ pub fn reference(_tag: &Tag, path: &Path) -> Result<RemoteFile, Report> {
         "
     );
 
-    let mut file = File::create(path)
-        .wrap_err_with(|| format!("Unable to create file: {path:?}"))?;
+    let mut file =
+        File::create(path).wrap_err_with(|| format!("Unable to create file: {path:?}"))?;
     file.write_all(sequences.as_bytes())
         .wrap_err_with(|| format!("Unable to write file: {path:?}"))?;
 
@@ -47,8 +47,8 @@ pub fn populations(_tag: &Tag, path: &Path) -> Result<RemoteFile, Report> {
         "
     );
 
-    let mut file = File::create(path)
-        .wrap_err_with(|| format!("Unable to create file: {path:?}"))?;
+    let mut file =
+        File::create(path).wrap_err_with(|| format!("Unable to create file: {path:?}"))?;
     file.write_all(sequences.as_bytes())
         .wrap_err_with(|| format!("Unable to write file: {path:?}"))?;
 

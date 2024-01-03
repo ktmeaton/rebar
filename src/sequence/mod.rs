@@ -2,6 +2,7 @@ pub mod parsimony;
 
 use color_eyre::eyre::{eyre, ContextCompat, Report, Result, WrapErr};
 use color_eyre::Help;
+use itertools::Itertools;
 use noodles::{core::Position, fasta};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -36,9 +37,7 @@ impl std::fmt::Display for Deletion {
 
 impl PartialEq for Deletion {
     fn eq(&self, other: &Self) -> bool {
-        self.coord == other.coord
-            && self.reference == other.reference
-            && self.alt == other.alt
+        self.coord == other.coord && self.reference == other.reference && self.alt == other.alt
     }
 }
 
@@ -118,22 +117,23 @@ impl Substitution {
 // Substitution
 // ----------------------------------------------------------------------------
 
+/// Reduced representation of an aligned sequence record.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Sequence {
+pub struct Record {
     pub id: String,
-    pub seq: Vec<char>,
-    alphabet: Vec<char>,
+    pub sequence: Vec<char>,
+    pub alphabet: Vec<char>,
     pub genome_length: usize,
     pub substitutions: Vec<Substitution>,
     pub deletions: Vec<Deletion>,
     pub missing: Vec<usize>,
 }
 
-impl Sequence {
+impl Record {
     pub fn new() -> Self {
-        Sequence {
+        Record {
             id: String::new(),
-            seq: Vec::new(),
+            sequence: Vec::new(),
             alphabet: vec!['A', 'C', 'G', 'T'],
             genome_length: 0,
             substitutions: Vec::new(),
@@ -142,101 +142,112 @@ impl Sequence {
         }
     }
 
-    /// Parse fasta record into a rebar sequence.
-    pub fn from_record(
-        record: fasta::Record,
-        reference: Option<&Sequence>,
+    /// Parse fasta record into a rebar sequence record.
+    pub fn from_fasta(
+        fasta: fasta::Record,
+        reference: Option<&Record>,
         mask: &Vec<usize>,
+        discard_sequence: bool,
     ) -> Result<Self, Report> {
-        let mut sample = Sequence::new();
-
-        // parse fasta::Record into rebar Sequence
-        let id = record.name().to_string();
+        let mut record = Record::new();
+        record.id = fasta.name().to_string();
 
         // convert sequence to vec of bases, noodle positions are 1-based!
         let start = Position::try_from(1).unwrap();
-        let seq: Vec<char> = record
+        record.sequence = fasta
             .sequence()
             .get(start..)
-            .context(format!("Failed to parse sequence record {}", &sample.id))?
-            .iter()
+            .context(format!("Failed to parse sequence record {}", record.id))?
+            .into_iter()
             .map(|b| *b as char)
             .collect();
-        let sample_len = seq.len();
-        sample.id = id.clone();
-        sample.seq = seq;
+        record.genome_length = record.sequence.len();
 
         // check mask coord
         for bases in mask {
-            if *bases > sample.seq.len() {
-                return Err(
-                    eyre!("5' and 3' masking ({mask:?}) is incompatible with {id} sequence length {sample_len}")
-                    .suggestion("Please change your --mask parameter.")
-                    .suggestion("Maybe you want to disable masking all together with --mask 0,0 ?")
-                );
+            if *bases > record.genome_length {
+                return Err(eyre!(
+                    "5' and 3' masking ({mask:?}) is incompatible with {} sequence length {}",
+                    record.id,
+                    record.genome_length
+                )
+                .suggestion("Please change your --mask parameter.")
+                .suggestion("Maybe you want to disable masking all together with --mask 0,0 ?"));
             }
         }
 
-        if let Some(reference) = reference {
-            let ref_len = reference.seq.len();
-            if sample_len != ref_len {
-                return Err(
-                    eyre!("Reference and {id} are different lengths ({ref_len} vs {sample_len})!")
-                    .suggestion(format!("Are you sure {id} is aligned correctly?"))
-                );
-            }
-            sample.genome_length = reference.seq.len();
-            // Construct iterator to traverse sample and reference bases together
-            let it = sample.seq.iter().zip(reference.seq.iter());
-            for (i, (s, r)) in it.enumerate() {
+        // if reference wasn't supplied, compare to self
+        let reference = if let Some(reference) = reference {
+            reference
+        } else {
+            &record
+        };
+
+        // compare reference and sequence lengths
+        let ref_len = reference.genome_length;
+        if record.genome_length != ref_len {
+            return Err(eyre!(
+                "Reference and {} are different lengths ({ref_len} vs {})!",
+                record.id,
+                record.genome_length
+            )
+            .suggestion(format!("Are you sure {} is aligned correctly?", record.id)));
+        }
+
+        // parse bases
+        record.sequence = record
+            .sequence
+            .into_iter()
+            .enumerate()
+            .map(|(i, mut base)| {
                 // Genomic coordinates are 1-based
                 let coord: usize = i + 1;
-                let mut s = *s;
-                let r = *r;
-                // Mask 5' and 3' ends
-                if !mask.is_empty() && coord <= mask[0] {
-                    s = 'N';
-                }
-                if mask.len() == 2 && coord > sample.genome_length - mask[1] {
-                    s = 'N';
+                // reference base
+                let r = reference.sequence[coord];
+
+                // Mask: 5' and 3' ends, IUPAC ambiguity, and sites where reference is missing or deletion
+                if (!mask.is_empty() && coord <= mask[0])
+                    || (mask.len() == 2 && coord > record.genome_length - mask[1])
+                    || (base != '-' && !record.alphabet.contains(&base))
+                    || !record.alphabet.contains(&r)
+                {
+                    base = 'N';
                 }
 
-                match s {
-                    // Missing data (N)
-                    'N' => sample.missing.push(coord),
-                    // Reference Missing data (N)
-                    _s if r == 'N' => continue,
-                    // Deletion
+                match base {
+                    // Missing (N)
+                    'N' => record.missing.push(coord),
+                    // Deletion (-)
                     '-' => {
                         let deletion = Deletion {
                             coord,
                             reference: r,
-                            alt: s,
+                            alt: '-',
                         };
-                        sample.deletions.push(deletion)
-                    }
-                    // Ambiguous data (IUPAC not in alphabet)
-                    s if s != r && !sample.alphabet.contains(&s) => {
-                        sample.missing.push(coord)
+                        record.deletions.push(deletion);
                     }
                     // Substitution
-                    s if s != r => {
+                    base if base != r => {
                         let substitution = Substitution {
                             coord,
                             reference: r,
-                            alt: s,
+                            alt: base,
                         };
-                        sample.substitutions.push(substitution)
+                        record.substitutions.push(substitution);
                     }
                     // Reference
-                    _ => continue,
+                    _ => (),
                 }
-            }
-        } else {
-            sample.genome_length = sample.seq.len();
+
+                base
+            })
+            .collect_vec();
+
+        if discard_sequence {
+            record.sequence = Vec::new();
         }
 
-        Ok(sample)
+        Ok(record)
     }
 }
 
@@ -245,7 +256,7 @@ impl Sequence {
 // ----------------------------------------------------------------------------
 
 /// Read first record of fasta path into sequence record.
-pub fn read_reference(path: &Path, mask: &Vec<usize>) -> Result<Sequence, Report> {
+pub fn read_reference(path: &Path, mask: &Vec<usize>) -> Result<Record, Report> {
     // start reading in the reference as fasta, raise error if file doesn't exist
     let mut reader = File::open(path).map(BufReader::new).map(fasta::Reader::new)?;
 
@@ -259,7 +270,8 @@ pub fn read_reference(path: &Path, mask: &Vec<usize>) -> Result<Sequence, Report
         .wrap_err_with(|| eyre!("Unable to read first fasta record: {path:?}"))?;
 
     // convert to sequence
-    let reference = Sequence::from_record(reference, None, mask)?;
+    let discard_sequence = false;
+    let reference = Record::from_fasta(reference, None, mask, discard_sequence)?;
 
     Ok(reference)
 }

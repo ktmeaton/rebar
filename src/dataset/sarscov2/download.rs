@@ -51,16 +51,12 @@ pub async fn lineage_notes(tag: &Tag, output_path: &Path) -> Result<RemoteFile, 
 }
 
 /// Download the SARS-CoV-2 nameTable mapping clades to lineage names.
-pub async fn clade_to_lineage(
-    tag: &Tag,
-    output_path: &Path,
-) -> Result<RemoteFile, Report> {
+pub async fn clade_to_lineage(tag: &Tag, output_path: &Path) -> Result<RemoteFile, Report> {
     let repo = "hodcroftlab/covariants";
     let remote_path = "web/data/nameTable.json";
     let sha: Option<String> = None;
-    let remote_file =
-        download_github(repo, tag, remote_path, output_path, &sha).await.wrap_err_with(
-            || eyre!("Failed downloading sars-cov-2 clade_to_lineage nameTable."),
-        )?;
+    let remote_file = download_github(repo, tag, remote_path, output_path, &sha)
+        .await
+        .wrap_err_with(|| eyre!("Failed downloading sars-cov-2 clade_to_lineage nameTable."))?;
     Ok(remote_file)
 }

@@ -3,8 +3,7 @@ use color_eyre::eyre::{Report, Result};
 use itertools::Itertools;
 
 /// Create SARS-CoV-2 genome annotations.
-pub fn build() -> Result<Table, Report> {
-    let mut table = Table::new();
+pub fn build() -> Result<Table<String>, Report> {
 
     let headers = vec!["gene", "abbreviation", "start", "end"];
     let rows = vec![
@@ -21,12 +20,9 @@ pub fn build() -> Result<Table, Report> {
         vec!["ORF9b", "9b", "28284", "28577"],
     ];
 
-    // Convert values to String
-    table.headers = headers.into_iter().map(String::from).collect_vec();
-    table.rows = rows
-        .into_iter()
-        .map(|row| row.into_iter().map(String::from).collect_vec())
-        .collect_vec();
+    let mut table = Table::new();
+    table.headers = headers.into_iter().map(String::from).collect();
+    table.rows = rows.into_iter().map(|r| r.into_iter().map(String::from).collect()).collect();    
 
     Ok(table)
 }

@@ -105,8 +105,7 @@ pub fn to_image(
     // Rasterize Glyphs
 
     // construct an image buffer to hold text pixels
-    let mut image_buffer =
-        ImageBuffer::<Rgba<u8>, Vec<_>>::new(width as u32, height as u32);
+    let mut image_buffer = ImageBuffer::<Rgba<u8>, Vec<_>>::new(width as u32, height as u32);
     let default_pixel: Rgba<u8> = Rgba([0, 0, 0, 0]);
 
     // iterate through each glyph ('letter')
@@ -152,9 +151,7 @@ pub fn to_image(
 }
 
 /// Convert image::ImageBuffer data text to u32 for raqote
-pub fn to_raqote_data(
-    image: &ImageBuffer<Rgba<u8>, Vec<u8>>,
-) -> Result<Vec<u32>, Report> {
+pub fn to_raqote_data(image: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> Result<Vec<u32>, Report> {
     // convert from u8 to u32
     let data = image
         .pixels()
@@ -196,9 +193,7 @@ impl<'canvas> DrawRaqoteArgs<'canvas> {
 }
 
 /// Draw text string onto raqote canvas.
-pub fn draw_raqote(
-    args: &mut DrawRaqoteArgs,
-) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, Report> {
+pub fn draw_raqote(args: &mut DrawRaqoteArgs) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, Report> {
     let font = match args.font_style {
         FontStyle::Regular => constants::FONT_REGULAR,
         FontStyle::Bold => constants::FONT_BOLD,

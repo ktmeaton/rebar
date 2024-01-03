@@ -1,7 +1,7 @@
 use crate::phylogeny::Phylogeny;
 use color_eyre::eyre::{Report, Result};
 
-pub fn build() -> Result<Phylogeny, Report> {
+pub fn build<'phylo>() -> Result<Phylogeny<'phylo>, Report> {
     let mut phylogeny = Phylogeny::new();
 
     // Add root node

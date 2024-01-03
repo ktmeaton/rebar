@@ -2,7 +2,7 @@ use crate::cli::run;
 use crate::dataset::attributes::{Name, Summary, Tag};
 use crate::dataset::Dataset;
 use crate::phylogeny::Phylogeny;
-use crate::sequence::{read_reference, Sequence, Substitution};
+use crate::{sequence, sequence::read_reference};
 use color_eyre::eyre::{Report, Result};
 use log::{info, warn};
 use noodles::fasta;
@@ -16,7 +16,10 @@ use std::path::Path;
 // ----------------------------------------------------------------------------
 
 /// Load dataset.
-pub fn dataset(dataset_dir: &Path, mask: &Vec<usize>) -> Result<Dataset, Report> {
+pub fn dataset<'phylo, 'pop>(
+    dataset_dir: &Path,
+    mask: &Vec<usize>,
+) -> Result<Dataset<'phylo, 'pop>, Report> {
     info!("Loading dataset: {:?}", dataset_dir);
 
     let mut dataset = Dataset::new();
@@ -40,12 +43,12 @@ pub fn dataset(dataset_dir: &Path, mask: &Vec<usize>) -> Result<Dataset, Report>
     let summary_path = dataset_dir.join("summary.json");
     if summary_path.exists() {
         let summary = Summary::read(&summary_path)?;
-        dataset.name = summary.name;
-        dataset.tag = summary.tag;
+        dataset.summary.name = summary.name;
+        dataset.summary.tag = summary.tag;
     } else {
         warn!("No summary was found: {summary_path:?}");
-        dataset.name = Name::Custom;
-        dataset.tag = Tag::Custom;
+        dataset.summary.name = Name::Custom;
+        dataset.summary.tag = Tag::Custom;
     }
 
     // Edge Cases
@@ -78,20 +81,19 @@ pub fn dataset(dataset_dir: &Path, mask: &Vec<usize>) -> Result<Dataset, Report>
 // ----------------------------------------------------------------------------
 
 #[allow(clippy::type_complexity)]
-pub fn parse_populations(
+pub fn parse_populations<'pop>(
     populations_path: &Path,
     reference_path: &Path,
     mask: &Vec<usize>,
 ) -> Result<
     (
-        BTreeMap<String, Sequence>,
-        BTreeMap<Substitution, Vec<String>>,
+        BTreeMap<String, sequence::Record>,
+        BTreeMap<&'pop sequence::Substitution, Vec<&'pop str>>,
     ),
     Report,
 > {
     // read in populations from fasta
-    let mut reader =
-        File::open(populations_path).map(BufReader::new).map(fasta::Reader::new)?;
+    let mut reader = File::open(populations_path).map(BufReader::new).map(fasta::Reader::new)?;
 
     // read in reference from fasta
     let reference = read_reference(reference_path, mask)?;
@@ -99,13 +101,14 @@ pub fn parse_populations(
     let mut populations = BTreeMap::new();
     let mut mutations = BTreeMap::new();
 
+    let discard_sequence = false;
     reader.records().try_for_each(|result| {
         let record = result?;
-        let sequence = Sequence::from_record(record, Some(&reference), mask)?;
+        let sequence = sequence::Record::from_fasta(record, Some(&reference), mask, discard_sequence)?;
         populations.insert(sequence.id.clone(), sequence.clone());
 
         sequence.substitutions.into_iter().for_each(|sub| {
-            mutations.entry(sub).or_insert(Vec::new()).push(sequence.id.clone());
+            mutations.entry(&sub).or_insert(Vec::new()).push(sequence.id.as_str());
         });
         Ok::<(), Report>(())
     })?;

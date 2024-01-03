@@ -1,127 +1,120 @@
 use crate::dataset::{Dataset, SearchResult};
 use crate::recombination::{validate, Recombination};
-use crate::utils;
+use crate::{utils, utils::table::Table};
 use color_eyre::eyre::{Report, Result};
 use itertools::Itertools;
 
 // ----------------------------------------------------------------------------
 // LineList
 
+const LINELIST_HEADERS: Vec<&str> = vec![
+    "strain",
+    "validate",
+    "validate_details",
+    "population",
+    "recombinant",
+    "parents",
+    "breakpoints",
+    "edge_case",
+    "unique_key",
+    "regions",
+    "substitutions",
+    "genome_length",
+    "dataset_name",
+    "dataset_tag",
+    "cli_version",
+];
+
 pub fn linelist(
-    results: &Vec<(SearchResult, Recombination)>,
-    dataset: &Dataset,
-) -> Result<utils::table::Table, Report> {
-    let mut table = utils::table::Table::new();
+    best_match: &SearchResult,
+    recombination: &Recombination,
+) -> Result<Table<String>, Report> {
+    let mut table = Table::new();
+    table.headers = LINELIST_HEADERS;
+    table.rows.push(vec![""; table.headers.len()]);
+    let row = 0;
 
-    table.headers = vec![
-        "strain",
-        "validate",
-        "validate_details",
-        "population",
-        "recombinant",
-        "parents",
+    table.set("strain", row, recombination.sequence.id.as_str())?;
+    table.set("population", row, best_match.consensus_population)?;
+    table.set("recombinant", row, recombination.recombinant.unwrap_or(""))?;
+    table.set("parents", row, recombination.parents.join(",").as_str())?;
+    table.set(
         "breakpoints",
+        row,
+        recombination.breakpoints.iter().join(",").as_str(),
+    )?;
+    table.set(
         "edge_case",
-        "unique_key",
-        "regions",
-        "substitutions",
-        "genome_length",
-        "dataset_name",
-        "dataset_tag",
-        "cli_version",
-    ]
-    .into_iter()
-    .map(|s| s.to_string())
-    .collect_vec();
+        row,
+        recombination.edge_case.to_string().as_str(),
+    )?;
 
-    // iterate in parallel, checking for same sequence id
-    for (best_match, recombination) in results {
-        // initialize the table row
-        let mut row = vec![String::new(); table.headers.len()];
-
-        // strain
-        let strain = recombination.sequence.id.to_string();
-        row[table.header_position("strain")?] = strain.clone();
-
-        // population
-        let population = best_match.consensus_population.to_string();
-        row[table.header_position("population")?] = population.clone();
-
-        // recombinant
-        if let Some(recombinant) = &recombination.recombinant {
-            row[table.header_position("recombinant")?] = recombinant.clone();
+    // validate, currently requires phylogeny
+    if !recombination.dataset.phylogeny.is_empty() {
+        let validate = validate::validate(recombination.dataset, best_match, recombination)?;
+        if let Some(validate) = validate {
+            table.set("validate", row, validate.status.to_string().as_str())?;
+            table.set(
+                "validate_details",
+                row,
+                validate.details.iter().join(";").as_str(),
+            )?
         }
-
-        // parents
-        let parents = recombination.parents.join(",").to_string();
-        row[table.header_position("parents")?] = parents;
-
-        // breakpoints
-        let breakpoints = recombination.breakpoints.iter().join(",").to_string();
-        row[table.header_position("breakpoints")?] = breakpoints;
-
-        // edge_case
-        let edge_case = recombination.edge_case.to_string();
-        row[table.header_position("edge_case")?] = edge_case;
-
-        // validate, currently requires phylogeny
-        if !dataset.phylogeny.is_empty() {
-            let validate = validate::validate(dataset, best_match, recombination)?;
-            if let Some(validate) = validate {
-                row[table.header_position("validate")?] = validate.status.to_string();
-                row[table.header_position("validate_details")?] =
-                    validate.details.iter().join(";");
-            }
-        }
-
-        // unique_key
-        let unique_key = recombination.unique_key.to_string();
-        row[table.header_position("unique_key")?] = unique_key;
-
-        // regions
-        let regions = recombination.regions.values().join(",").to_string();
-        row[table.header_position("regions")?] = regions;
-
-        // genome_length
-        let genome_length = recombination.genome_length.to_string();
-        row[table.header_position("genome_length")?] = genome_length;
-
-        // dataset name
-        row[table.header_position("dataset_name")?] = dataset.name.to_string();
-
-        // dataset tag
-        row[table.header_position("dataset_tag")?] = dataset.tag.to_string();
-
-        // cli version
-        row[table.header_position("cli_version")?] =
-            env!("CARGO_PKG_VERSION").to_string();
-
-        // --------------------------------------------------------------------
-        // Substitutions, annotated by parental origin or private
-
-        let subs_by_origin = recombination.get_substitution_origins(best_match)?;
-        let mut origins = Vec::new();
-        // origin order: primary parent, secondary parent, recombinant, private
-        if recombination.recombinant.is_some() {
-            origins.extend(recombination.parents.clone());
-        } else {
-            origins.push(best_match.consensus_population.clone());
-        }
-        origins.push("private".to_string());
-
-        // string format
-        let substitutions = origins
-            .iter()
-            .filter_map(|o| {
-                let subs = subs_by_origin.get(o).cloned().unwrap_or_default();
-                let subs_format = format!("{}|{o}", subs.iter().join(","));
-                (!subs.is_empty()).then_some(subs_format)
-            })
-            .join(";");
-        row[table.header_position("substitutions")?] = substitutions;
-
-        table.rows.push(row);
     }
+
+    table.set("unique_key", row, recombination.unique_key.as_str())?;
+    table.set(
+        "regions",
+        row,
+        recombination.regions.values().join(",").as_str(),
+    )?;
+    table.set(
+        "genome_length",
+        row,
+        recombination.dataset.reference.genome_length.to_string().as_str(),
+    )?;
+    table.set(
+        "dataset_name",
+        row,
+        recombination.dataset.summary.name.to_string().as_str(),
+    );
+    table.set(
+        "dataset_tag",
+        row,
+        recombination.dataset.summary.tag.to_string().as_str(),
+    );
+    table.set("cli_version", row, env!("CARGO_PKG_VERSION"));
+
+    // --------------------------------------------------------------------
+    // Substitutions, annotated by parental origin or private
+
+    let subs_by_origin = recombination.get_substitution_origins(best_match)?;
+
+    // origin order: primary parent, secondary parent, recombinant, private
+    let mut origins = match recombination.recombinant.is_some() {
+        true => recombination.parents,
+        false => vec![best_match.consensus_population],
+    };
+    origins.push("private");
+
+    let substitutions = origins
+        .into_iter()
+        .filter_map(|o| {
+            let subs = subs_by_origin.get(o).cloned().unwrap_or_default();
+            let subs_format = format!("{}|{o}", subs.iter().join(","));
+            (!subs.is_empty()).then_some(subs_format)
+        })
+        .join(";");
+    table.set("substitutions", row, substitutions.as_str())?;
+
+    // convert to Table of owned strings
+    let mut table = Table::new();
+    table.headers = table.headers.into_iter().map(String::from).collect_vec();
+    table.rows = table
+        .rows
+        .into_iter()
+        .map(|row| row.into_iter().map(String::from).collect_vec())
+        .collect_vec();
 
     Ok(table)
 }

@@ -17,13 +17,13 @@ use strum::IntoEnumIterator;
 /// Uses a recursion_limit for safety. It is not intended to
 /// run this wrapper function more than once recursively.
 #[allow(clippy::needless_if)]
-pub fn all_parents<'seq>(
+pub fn all_parents<'dataset, 'seq>(
     sequence: &'seq Sequence,
-    dataset: &Dataset,
+    dataset: &'dataset Dataset,
     best_match: &mut SearchResult,
-    populations: &[&String],
+    populations: &[&str],
     args: &run::Args,
-) -> Result<Recombination<'seq>, Report> {
+) -> Result<Recombination<'dataset, 'seq>, Report> {
     // copy args, we don't want to modify the original global parameters
     let mut args = args.clone();
     // copy search populations, we will refine these based on edge cases and
@@ -41,10 +41,8 @@ pub fn all_parents<'seq>(
 
     // only apply edge cases if the user didn't request a naive search
     if !args.naive {
-        let edge_case_search = dataset
-            .edge_cases
-            .iter()
-            .find(|e| e.population.as_ref() == best_match.recombinant.as_ref());
+        let edge_case_search =
+            dataset.edge_cases.iter().find(|e| e.population.as_deref() == best_match.recombinant);
 
         if let Some(edge_case_args) = edge_case_search {
             debug!("Applying edge case parameters: {edge_case_args:?}");
@@ -52,11 +50,13 @@ pub fn all_parents<'seq>(
             args = args.apply_edge_case(edge_case_args)?;
 
             if let Some(parents) = &edge_case_args.parents {
-                let parents_expand = dataset.expand_populations(parents)?;
+                let parents = parents.iter().map(AsRef::as_ref).collect_vec();
+                let parents_expand = dataset.expand_populations(&parents)?;
                 populations.retain(|pop| parents_expand.contains(pop));
             }
             if let Some(knockout) = &edge_case_args.knockout {
-                let knockout = dataset.expand_populations(knockout)?;
+                let knockout = knockout.iter().map(AsRef::as_ref).collect_vec();
+                let knockout = dataset.expand_populations(&knockout)?;
                 populations.retain(|pop| !knockout.contains(pop));
             }
         }
@@ -94,7 +94,7 @@ pub fn all_parents<'seq>(
             continue;
         }
 
-        let mut hyp_populations: Vec<&String> = populations.clone();
+        let mut hyp_populations: Vec<&str> = populations;
 
         // ----------------------------------------------------------------------------
         // Hypothesis: Designated Recombinant.
@@ -107,8 +107,7 @@ pub fn all_parents<'seq>(
                 continue;
             }
             if let Some(recombinant) = &best_match.recombinant {
-                let mut designated_parents =
-                    dataset.phylogeny.get_parents(recombinant)?;
+                let mut designated_parents = dataset.phylogeny.get_parents(recombinant)?;
                 debug!("Designated parents: {designated_parents:?}");
                 // we might not have sequence data for all designated parents.
                 let designated_parents_filter = designated_parents
@@ -143,8 +142,7 @@ pub fn all_parents<'seq>(
             if hypotheses.contains_key(&Hypothesis::NonRecursiveRecombinant) {
                 continue;
             }
-            hyp_populations
-                .retain(|pop| !dataset.phylogeny.recombinants_all.contains(pop));
+            hyp_populations.retain(|pop| !dataset.phylogeny.recombinants_all.contains(pop));
         }
 
         // ----------------------------------------------------------------------------
@@ -190,10 +188,8 @@ pub fn all_parents<'seq>(
                 let hypothesis = if hypothesis == Hypothesis::RecursiveRecombinant {
                     let mut is_recursive = false;
                     recombination.parents.iter().for_each(|pop| {
-                        let recombinant_ancestor = dataset
-                            .phylogeny
-                            .get_recombinant_ancestor(pop)
-                            .unwrap_or(None);
+                        let recombinant_ancestor =
+                            dataset.phylogeny.get_recombinant_ancestor(pop).unwrap_or(None);
                         if recombinant_ancestor.is_some() {
                             is_recursive = true
                         }
@@ -208,8 +204,7 @@ pub fn all_parents<'seq>(
                     hypothesis
                 };
 
-                hypotheses
-                    .insert(hypothesis, (Some(recombination), parents, score, conflict));
+                hypotheses.insert(hypothesis, (Some(recombination), parents, score, conflict));
             } else {
                 debug!("Secondary Parent(s) Search was unsuccessful.");
             }
@@ -250,10 +245,8 @@ pub fn all_parents<'seq>(
         //                but lots of conflict.
         // Ex. XCW:       DesignatedRecombinant: score=55, conflict=6, NonRecursiveRecombinant: score=65, conflict=17
 
-        let min_conflict =
-            hypotheses.iter().map(|(_hyp, (_r, _p, _s, c))| c).min().unwrap();
-        let max_conflict =
-            hypotheses.iter().map(|(_hyp, (_r, _p, _s, c))| c).max().unwrap();
+        let min_conflict = hypotheses.iter().map(|(_hyp, (_r, _p, _s, c))| c).min().unwrap();
+        let max_conflict = hypotheses.iter().map(|(_hyp, (_r, _p, _s, c))| c).max().unwrap();
         let conflict_range = max_conflict - min_conflict;
         let conflict_threshold = 5;
 
@@ -267,8 +260,7 @@ pub fn all_parents<'seq>(
                 .collect_vec()
         } else {
             debug!("Best hypothesis selected by MAX SCORE. Conflict range ({conflict_range}) < threshold ({conflict_threshold})");
-            let max_score =
-                hypotheses.iter().map(|(_hyp, (_r, _p, s, _c))| s).max().unwrap();
+            let max_score = hypotheses.iter().map(|(_hyp, (_r, _p, s, _c))| s).max().unwrap();
             hypotheses
                 .iter()
                 .filter_map(|(hyp, (_r, _p, s, _c))| (s == max_score).then_some(hyp))
@@ -322,18 +314,19 @@ pub fn all_parents<'seq>(
         let expected = dataset.phylogeny.get_parents(recombinant)?;
         let parents_match = validate::compare_parents(observed, &expected, dataset)?;
 
-        if parents_match {
-            Some(recombinant.clone())
-        } else {
-            *best_match = primary_parent;
-            debug!(
-                "Changing best match consensus to primary parent:\n{}",
-                best_match.pretty_print()
-            );
-            Some("novel".to_string())
+        match parents_match {
+            true => Some(recombinant.clone()),
+            false => {
+                *best_match = primary_parent;
+                debug!(
+                    "Changing best match consensus to primary parent:\n{}",
+                    best_match.pretty_print()
+                );
+                Some("novel")
+            }
         }
     } else {
-        Some("novel".to_string())
+        Some("novel")
     };
 
     recombination.unique_key = format!(
@@ -349,12 +342,12 @@ pub fn all_parents<'seq>(
 }
 
 // Search for the secondary recombination parent(s).
-pub fn secondary_parents<'seq>(
+pub fn secondary_parents<'dataset, 'seq>(
     sequence: &'seq Sequence,
-    dataset: &Dataset,
+    dataset: &'dataset Dataset,
     parents: &[SearchResult],
     args: &run::Args,
-) -> Result<(Recombination<'seq>, Vec<SearchResult>), Report> {
+) -> Result<(Recombination<'dataset, 'seq>, Vec<SearchResult>), Report> {
     // Initialize our 'Recombination' result, that we will modify and update
     // as we iterate through potential parents
     let mut recombination = Recombination::new(sequence);
@@ -416,11 +409,8 @@ pub fn secondary_parents<'seq>(
         // by a recombination parent found so far.
 
         // identify all substitutions found in all parents so far
-        let parent_substitutions = parents
-            .iter()
-            .flat_map(|parent| &parent.substitutions)
-            .unique()
-            .collect_vec();
+        let parent_substitutions =
+            parents.iter().flat_map(|parent| &parent.substitutions).unique().collect_vec();
 
         // --------------------------------------------------------------------
         // Conflict ALT
@@ -589,17 +579,13 @@ pub fn secondary_parents<'seq>(
 
             //debug!("dataset.search");
 
-            let parent_candidate = dataset.search(
-                sequence,
-                Some(&include_populations),
-                Some(&search_coords),
-            );
+            let parent_candidate =
+                dataset.search(sequence, Some(&include_populations), Some(&search_coords));
 
             // if the search found parents, check for recombination
             if let Ok(parent_candidate) = parent_candidate {
                 // remove this parent from future searches
-                include_populations
-                    .retain(|pop| **pop != parent_candidate.consensus_population);
+                include_populations.retain(|pop| **pop != parent_candidate.consensus_population);
 
                 // check for recombination
                 let detect_result = detect_recombination(

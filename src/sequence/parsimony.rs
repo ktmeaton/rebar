@@ -1,4 +1,4 @@
-use crate::sequence::{Sequence, Substitution};
+use crate::sequence;
 use color_eyre::eyre::{Report, Result};
 use indoc::formatdoc;
 use itertools::Itertools;
@@ -8,73 +8,81 @@ use serde::{Deserialize, Serialize};
 // Population Parsimony Summary
 
 /// Summarize support and conflicts between two sequences.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Summary {
-    pub support: Vec<Substitution>,
-    pub conflict_ref: Vec<Substitution>,
-    pub conflict_alt: Vec<Substitution>,
-    pub score: isize,
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct Summary<'primary, 'secondary> {
+    #[serde(skip_deserializing)]
+    pub support: &'primary [&'primary sequence::Substitution],
+    #[serde(skip_deserializing)]
+    pub conflict_ref: &'secondary [&'secondary sequence::Substitution],
+    #[serde(skip_deserializing)]
+    pub conflict_alt: &'primary [&'primary sequence::Substitution],
+    #[serde(skip_deserializing)]
+    pub private: &'primary [&'primary sequence::Substitution],
 }
 
-impl Summary {
+impl<'primary, 'secondary> Summary<'primary, 'secondary> {
     pub fn new() -> Self {
         Summary {
-            support: Vec::new(),
-            conflict_ref: Vec::new(),
-            conflict_alt: Vec::new(),
-            score: 0,
+            support: &[],
+            conflict_ref: &[],
+            conflict_alt: &[],
+            private: &[],
         }
     }
 
-    /// Summarize support and conflicts between two sequences.
-    pub fn from_sequence(
-        sequence: &Sequence,
-        query: &Sequence,
+    /// Calculate parsimony score = support - conflict_alt - conflict_ref
+    pub fn score(&self) -> isize {
+        // why did we previously use only conflict_ref and not conflict_alt?
+        // individual isize conversion otherwise: "attempt to subtract with overflow"
+        self.support.len() as isize
+            - self.conflict_ref.len() as isize
+            - self.conflict_alt.len() as isize
+    }
+
+    /// Summarize support and conflicts between two sequence records.
+    pub fn from_records(
+        primary: &sequence::Record,
+        secondary: &sequence::Record,
         coordinates: Option<&[usize]>,
     ) -> Result<Self, Report> {
-        let mut parsimony_summary = Summary::new();
+        let mut summary = Summary::new();
 
-        // get all the substitutions found in the sequence
-        let mut seq_subs = sequence.substitutions.clone();
-        //println!("seq_subs: {}", seq_subs.iter().join(","));
-        // exclude coordinates that are in the sequence missing or deletions
-        let mut exclude_coordinates =
-            sequence.deletions.iter().map(|d| d.coord).collect_vec();
-        exclude_coordinates.extend(sequence.missing.clone());
-        // get all the substitutions found in this query
+        // get all the substitutions found in the primary sequence
+        let mut primary_subs = &primary.substitutions;
+
+        // exclude coordinates that are in the primary sequence missing or deletions
+        let mut exclude_coordinates = primary.deletions.iter().map(|d| d.coord).collect_vec();
+        exclude_coordinates.extend(primary.missing);
+        // get all the substitutions found in the secondary sequence
         // exclude missing and deletion coordinates
-        let mut query_subs = query.substitutions.clone();
-        query_subs.retain(|s| !exclude_coordinates.contains(&s.coord));
-        //println!("query_subs: {}", query_subs.iter().join(","));
+        let mut secondary_subs = &secondary.substitutions;
+        secondary_subs.retain(|s| !exclude_coordinates.contains(&s.coord));
 
         // optionally filter coordinates
         if let Some(coordinates) = coordinates {
-            query_subs.retain(|sub| coordinates.contains(&sub.coord));
-            seq_subs.retain(|sub| coordinates.contains(&sub.coord));
+            secondary_subs.retain(|sub| coordinates.contains(&sub.coord));
+            primary_subs.retain(|sub| coordinates.contains(&sub.coord));
         }
 
-        // support: sub in seq that is also in query
-        // conflict_alt: sub in seq that is not in candidate query
-        seq_subs.iter().for_each(|sub| {
-            if query_subs.contains(sub) {
-                parsimony_summary.support.push(*sub);
-            } else {
-                parsimony_summary.conflict_alt.push(*sub);
-            }
+        // support: sub in primary that is also in secondary
+        // conflict_alt: sub in primary that is not in secondary
+        primary_subs.iter().for_each(|sub| match secondary_subs.contains(sub) {
+            true => summary.support.push(sub),
+            false => summary.conflict_alt.push(sub),
         });
 
-        // conflict_ref: sub in query that is not in seq
-        parsimony_summary.conflict_ref =
-            query_subs.into_iter().filter(|sub| !seq_subs.contains(sub)).collect_vec();
+        // conflict_ref: sub in secondary that is not in primary
+        summary.conflict_ref = secondary_subs.iter().filter(|sub| !primary_subs.contains(sub)).collect();
 
-        // score: support - conflict_alt - conflict_ref
-        // why did we previously use only conflict_ref and not conflict_alt?
-        // individual isize conversion otherwise: "attempt to subtract with overflow"
-        parsimony_summary.score = parsimony_summary.support.len() as isize
-            - parsimony_summary.conflict_ref.len() as isize
-            - parsimony_summary.conflict_alt.len() as isize;
+        // private subs (conflict_alt and conflict_ref reversed)
+        let mut private = summary.conflict_alt.to_vec();
+        private = summary.conflict_ref.iter().map(|s| {
+            sequence::Substitution {coord: s.coord, reference: s.alt, alt: s.reference}
+        }).collect();
+        private.sort();
+        summary.private = &private;
 
-        Ok(parsimony_summary)
+        Ok(summary)
     }
 
     pub fn pretty_print(&self) -> String {
@@ -82,16 +90,18 @@ impl Summary {
             "score:\n  {}
             support:\n  {}
             conflict_ref:\n  {}
-            conflict_alt:\n  {}",
-            self.score,
+            conflict_alt:\n  {},
+            private:\n  {}",            
+            self.score(),
             self.support.iter().join(", "),
             self.conflict_ref.iter().join(", "),
             self.conflict_alt.iter().join(", "),
+            self.private.iter().join(", "),            
         )
     }
 }
 
-impl Default for Summary {
+impl<'primary, 'secondary> Default for Summary<'primary, 'secondary> {
     fn default() -> Self {
         Self::new()
     }

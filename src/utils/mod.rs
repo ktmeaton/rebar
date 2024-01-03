@@ -18,11 +18,7 @@ use tempfile::TempDir;
 use zstd::stream::read::Decoder;
 
 /// Download file from url to path, with optional decompression.
-pub async fn download_file(
-    url: &str,
-    output_path: &Path,
-    decompress: bool,
-) -> Result<(), Report> {
+pub async fn download_file(url: &str, output_path: &Path, decompress: bool) -> Result<(), Report> {
     let ext = Path::new(&url).extension().unwrap().to_str().unwrap();
 
     let response = reqwest::get(url).await?;
@@ -38,8 +34,7 @@ pub async fn download_file(
         let tmp_dir = TempDir::new()?;
         let tmp_path = PathBuf::from(tmp_dir.path()).join(format!("tmpfile.{ext}"));
         let content = response.bytes().await?;
-        write(&tmp_path, content)
-            .wrap_err_with(|| eyre!("Unable to write file: {tmp_path:?}"))?;
+        write(&tmp_path, content).wrap_err_with(|| eyre!("Unable to write file: {tmp_path:?}"))?;
         decompress_file(&tmp_path, output_path, true)?;
     } else {
         let content = response.text().await?;
@@ -58,21 +53,11 @@ pub fn check_github_response(response: &reqwest::Response) -> Result<(), Report>
         // Check if the API rate limit was exceeded
 
         // todo!() this is some pretty risky unwrapping here
-        let rate_limit_remaining: u32 = response
-            .headers()
-            .get("x-ratelimit-remaining")
-            .unwrap()
-            .to_str()?
-            .parse()
-            .unwrap();
+        let rate_limit_remaining: u32 =
+            response.headers().get("x-ratelimit-remaining").unwrap().to_str()?.parse().unwrap();
         if rate_limit_remaining == 0 {
-            let rate_limit_reset: i64 = response
-                .headers()
-                .get("x-ratelimit-reset")
-                .unwrap()
-                .to_str()?
-                .parse()
-                .unwrap();
+            let rate_limit_reset: i64 =
+                response.headers().get("x-ratelimit-reset").unwrap().to_str()?.parse().unwrap();
             let rate_limit_reset: DateTime<Local> =
                 DateTime::<Utc>::from_timestamp(rate_limit_reset, 0)
                     .expect("invalid timestamp")
@@ -167,8 +152,7 @@ pub async fn download_github(
     // --------------------------------------------------------------------------
     // STEP 2: DOWNLOAD
 
-    let download_url =
-        format!("https://raw.githubusercontent.com/{repo}/{sha}/{remote_path}");
+    let download_url = format!("https://raw.githubusercontent.com/{repo}/{sha}/{remote_path}");
 
     // Identify decompression mode
     // TBD! todo!() make this an enum of implemented decompression types
@@ -194,9 +178,8 @@ pub async fn download_github(
 
 /// Decompress file, optionally inplace
 pub fn decompress_file(input: &Path, output: &Path, inplace: bool) -> Result<(), Report> {
-    let ext = input
-        .extension()
-        .ok_or_else(|| eyre!("Unable to parse extension from file: {input:?}"))?;
+    let ext =
+        input.extension().ok_or_else(|| eyre!("Unable to parse extension from file: {input:?}"))?;
 
     match ext.to_str().unwrap() {
         "zst" => {
@@ -204,8 +187,7 @@ pub fn decompress_file(input: &Path, output: &Path, inplace: bool) -> Result<(),
             let mut decoder = Decoder::new(reader)?;
             let mut buffer = String::new();
             decoder.read_to_string(&mut buffer)?;
-            write(output, buffer)
-                .wrap_err(format!("Unable to write file: {:?}", output))?;
+            write(output, buffer).wrap_err(format!("Unable to write file: {:?}", output))?;
 
             if inplace {
                 remove_file(input)?;
@@ -232,8 +214,9 @@ pub fn ext_to_delim(ext: &str) -> Result<char, Report> {
             '\t'
         }
         _ => {
-            return Err(eyre!("Unknown file extension: {ext:?}")
-                .suggestion("Options are tsv or csv."))
+            return Err(
+                eyre!("Unknown file extension: {ext:?}").suggestion("Options are tsv or csv.")
+            )
         }
     };
 
@@ -253,8 +236,9 @@ pub fn path_to_delim(path: &Path) -> Result<char, Report> {
             '\t'
         }
         _ => {
-            return Err(eyre!("Unknown file extension: {ext:?}")
-                .suggestion("Options are tsv or csv."))
+            return Err(
+                eyre!("Unknown file extension: {ext:?}").suggestion("Options are tsv or csv.")
+            )
         }
     };
 
