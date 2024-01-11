@@ -1,3 +1,5 @@
+pub mod tests;
+
 use crate::utils::remote_file::RemoteFile;
 use chrono::prelude::*;
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};

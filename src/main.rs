@@ -5,16 +5,6 @@ use rebar::{cli, cli::Cli};
 
 #[tokio::main]
 async fn main() -> Result<(), Report> {
-    use rebar::utils::{table, table::Table};
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    let mut table = Table::new();
-    table.headers = vec!["1", "2", "3"];
-    table.add_row(vec!["A", "B", "C"]);
-    table.set_row(0, vec!["AA", "BB", "CC"]);
-    println!("{}", table.to_markdown().unwrap());
-
     // ------------------------------------------------------------------------
     // CLI Setup
 
@@ -34,7 +24,7 @@ async fn main() -> Result<(), Report> {
     match args.command {
         // Dataset
         cli::Command::Dataset(args) => match args.command {
-            cli::dataset::Command::List(args) => list::datasets(&args)?,
+            cli::dataset::Command::List(args) => _ = list::datasets(&args)?,
             cli::dataset::Command::Download(mut args) => _ = download::dataset(&mut args).await?,
         },
         _ => (),

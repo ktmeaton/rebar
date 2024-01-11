@@ -1,3 +1,5 @@
+pub mod tests;
+
 use crate::dataset::attributes::Name;
 use crate::utils::table::Table;
 use clap::Parser;
@@ -31,7 +33,7 @@ impl Args {
 // Functions
 
 /// List datasets
-pub fn datasets(args: &Args) -> Result<(), Report> {
+pub fn datasets(args: &Args) -> Result<Table<String>, Report> {
     // table of name, tag, cli_version
     let mut table = Table::new();
     table.headers = vec![
@@ -82,5 +84,5 @@ pub fn datasets(args: &Args) -> Result<(), Report> {
 
     println!("\n{}", table.to_markdown()?);
 
-    Ok(())
+    Ok(table)
 }

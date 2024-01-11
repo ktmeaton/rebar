@@ -1,7 +1,6 @@
 pub mod attributes;
 pub mod download;
 pub mod list;
-pub mod tests;
 pub mod toy1;
 
 use serde::{Deserialize, Serialize};

@@ -28,7 +28,7 @@ use structdoc::StructDoc;
 /// |---|---|---|
 /// | A | B | C |
 ///
-#[derive(Debug, StructDoc)]
+#[derive(Debug, PartialEq, StructDoc)]
 pub struct Table<T> {
     /// Names of the table columns.
     pub headers: Vec<T>,
@@ -403,6 +403,19 @@ where
         }
 
         Ok(markdown)
+    }
+}
+
+impl<'t, T> Table<T>
+where
+    T: ToString,
+{
+    /// Create a new table with all values converted to owned String.
+    pub fn to_string_values(&self) -> Table<String> {
+        let mut table = Table::new();
+        table.headers = self.headers.iter().map(|s| s.to_string()).collect();
+        table.rows = self.rows.iter().map(|row| row.iter().map(|s| s.to_string()).collect()).collect();
+        table
     }
 }
 
