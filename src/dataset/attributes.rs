@@ -1,5 +1,3 @@
-pub mod tests;
-
 use crate::utils::remote_file::RemoteFile;
 use chrono::prelude::*;
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};
@@ -22,6 +20,12 @@ use strum::{EnumIter, EnumProperty};
 /// The name of a dataset.
 ///
 /// Might represent a particular organism (ex. sars-cov-2) or simulated data for testing (toy1).
+///
+/// # Examples
+///
+/// ```
+/// use rebar::dataset::Name;
+/// ```
 #[derive(
     Clone,
     Copy,

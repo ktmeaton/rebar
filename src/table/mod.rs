@@ -1,4 +1,4 @@
-//! High level documentation.
+//! Table operations.
 
 use crate::utils;
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};
@@ -15,7 +15,7 @@ use structdoc::StructDoc;
 /// # Examples
 ///
 /// ```
-/// use rebar::utils::table::Table;
+/// use rebar::Table;
 ///
 /// let mut table = Table::new();
 /// table.headers = vec!["1", "2", "3"];
@@ -70,7 +70,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use rebar::utils::table::Table;
+    /// use rebar::Table;
     ///
     /// let mut table = Table::new();
     /// table.headers = vec!["1", "2", "3"];
@@ -93,7 +93,7 @@ where
             if ex != new {
                 return Err(eyre!(
                     "New row size ({new}) does not matching existing table ({ex})."
-                ));
+                ))?;
             }
         }
         self.rows.push(row);
@@ -109,7 +109,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use rebar::utils::table::Table;
+    /// use rebar::Table;
     ///
     /// let mut table = Table::new();
     /// table.headers = vec!["1", "2", "3"];
@@ -152,7 +152,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use rebar::utils::table::Table;
+    /// use rebar::Table;
     ///
     /// let mut table = Table::new();
     /// table.headers = vec!["1", "2", "3"];
@@ -178,7 +178,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use rebar::utils::table::Table;
+    /// use rebar::Table;
     ///
     /// let mut table = Table::new();
     /// table.headers = vec!["1", "2", "3"];
@@ -204,7 +204,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use rebar::utils::table::Table;
+    /// use rebar::Table;
     ///
     /// let mut table = Table::new();
     /// table.headers = vec!["1", "2", "3"];
@@ -217,7 +217,7 @@ where
     /// ```
     pub fn get_row(&'t self, i: usize) -> Result<&[T], Report> {
         if i >= self.rows.len() {
-            return Err(eyre!("Row ({i}) does not exist in the table."));
+            Err(eyre!("Row ({i}) does not exist in the table."))
         } else {
             Ok(&self.rows[i])
         }
@@ -232,7 +232,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use rebar::utils::table::Table;
+    /// use rebar::Table;
     ///
     /// let mut table = Table::new();
     /// table.headers = vec!["1", "2", "3"];
@@ -261,7 +261,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use rebar::utils::table::Table;
+    /// use rebar::Table;
     ///
     /// let mut table = Table::new();
     /// table.headers = vec!["1", "2", "3"];
@@ -282,12 +282,65 @@ where
         Ok(())
     }
 
+    /// Read a TSV or CSV file into a Table.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - File path.
+    /// * `delim` - Optional delimiter. Otherwise, will be identified based on path suffix (.tsv or .csv).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rebar::Table;
+    /// use std::io::Write;
+    /// use tempfile::NamedTempFile;
+    ///
+    /// let mut file = NamedTempFile::new().unwrap();
+    /// writeln!(file, "1\t2\t3\nA\tB\tC");
+    /// let table = Table::read(file.path(), Some('\t')).unwrap();
+    /// println!("{}", table.to_markdown().unwrap());
+    /// ```
+    /// | 1 | 2 | 3 |
+    /// |---|---|---|
+    /// | A | B | C |
+    ///
+    pub fn read(path: &Path, delim: Option<char>) -> Result<Table<String>, Report> {
+        let mut table = Table::new();
+
+        // if not provided, lookup delimiter from file extension
+        let delim = match delim {
+            Some(c) => c,
+            None => utils::path_to_delim(path)?,
+        };
+
+        // attempt to open the file path
+        let file = File::open(path).wrap_err_with(|| eyre!("Failed to read file: {path:?}"))?;
+
+        // read and parse lines
+        for line in BufReader::new(file).lines().flatten() {
+            let row = line.split(delim).map(String::from).collect_vec();
+            // if headers are empty, this is the first line, write headers
+            if table.headers.is_empty() {
+                table.headers = row;
+            }
+            // otherwise regular row
+            else {
+                table.rows.push(row);
+            }
+        }
+
+        table.path = Some(path.to_path_buf());
+
+        Ok(table)
+    }
+
     /// Write table to file.
     ///
     /// # Examples
     ///
     /// ```
-    /// use rebar::utils::table::Table;
+    /// use rebar::Table;
     /// use tempfile::NamedTempFile;
     ///
     /// let mut table = Table::new();
@@ -308,16 +361,15 @@ where
             Some(c) => c,
             None => utils::path_to_delim(path)?,
         };
-        let delim = utils::path_to_delim(path)?.to_string();
 
         // write headers
-        let line = format!("{}\n", self.headers.iter().join(&delim));
+        let line = format!("{}\n", self.headers.iter().join(delim.to_string().as_str()));
         file.write_all(line.as_bytes())
             .wrap_err_with(|| format!("Unable to write table headers: {line}"))?;
 
         // write regular rows
         for row in &self.rows {
-            let line = format!("{}\n", row.iter().join(&delim));
+            let line = format!("{}\n", row.iter().join(delim.to_string().as_str()));
             file.write_all(line.as_bytes())
                 .wrap_err_with(|| format!("Unable to write table rows: {line}"))?;
         }
@@ -336,7 +388,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use rebar::utils::table::Table;
+    /// use rebar::Table;
     ///
     /// let mut table = Table::new();
     /// table.headers = vec!["1", "2", "3"];
@@ -406,7 +458,7 @@ where
     }
 }
 
-impl<'t, T> Table<T>
+impl<T> Table<T>
 where
     T: ToString,
 {
@@ -414,7 +466,8 @@ where
     pub fn to_string_values(&self) -> Table<String> {
         let mut table = Table::new();
         table.headers = self.headers.iter().map(|s| s.to_string()).collect();
-        table.rows = self.rows.iter().map(|row| row.iter().map(|s| s.to_string()).collect()).collect();
+        table.rows =
+            self.rows.iter().map(|row| row.iter().map(|s| s.to_string()).collect()).collect();
         table
     }
 }
@@ -432,56 +485,3 @@ where
 //         Ok(table)
 //     }
 // }
-
-/// Read a TSV or CSV file into a Table.
-///
-/// # Arguments
-///
-/// * `path` - File path.
-/// * `delim` - Optional delimiter. Otherwise, will be identified based on path suffix (.tsv or .csv).
-///
-/// # Examples
-///
-/// ```
-/// use rebar::utils::table;
-/// use std::io::Write;
-/// use tempfile::NamedTempFile;
-///
-/// let mut file = NamedTempFile::new().unwrap();
-/// writeln!(file, "1\t2\t3\nA\tB\tC");
-/// let table = table::read(file.path(), Some('\t')).unwrap();
-/// println!("{}", table.to_markdown().unwrap());
-/// ```
-/// | 1 | 2 | 3 |
-/// |---|---|---|
-/// | A | B | C |
-///
-pub fn read(path: &Path, delim: Option<char>) -> Result<Table<String>, Report> {
-    let mut table = Table::new();
-
-    // if not provided, lookup delimiter from file extension
-    let delim = match delim {
-        Some(c) => c,
-        None => utils::path_to_delim(path)?,
-    };
-
-    // attempt to open the file path
-    let file = File::open(path).wrap_err_with(|| eyre!("Failed to read file: {path:?}"))?;
-
-    // read and parse lines
-    for line in BufReader::new(file).lines().flatten() {
-        let row = line.split(delim).map(String::from).collect_vec();
-        // if headers are empty, this is the first line, write headers
-        if table.headers.is_empty() {
-            table.headers = row;
-        }
-        // otherwise regular row
-        else {
-            table.rows.push(row);
-        }
-    }
-
-    table.path = Some(path.to_path_buf());
-
-    Ok(table)
-}

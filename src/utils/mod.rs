@@ -1,5 +1,7 @@
 pub mod remote_file;
-pub mod table;
+pub mod verbosity;
+
+pub use crate::table::Table;
 
 use crate::dataset::attributes::Tag;
 use crate::utils::remote_file::RemoteFile;
@@ -45,6 +47,7 @@ pub async fn download_file(url: &str, output_path: &Path, decompress: bool) -> R
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn check_github_response(response: &reqwest::Response) -> Result<(), Report> {
     let url = response.url().to_string();
 
@@ -84,6 +87,7 @@ pub fn check_github_response(response: &reqwest::Response) -> Result<(), Report>
 }
 
 /// Query and download files using the GitHub API
+#[allow(dead_code)]
 pub async fn download_github(
     repo: &str,
     tag: &Tag,
@@ -205,6 +209,7 @@ pub fn decompress_file(input: &Path, output: &Path, inplace: bool) -> Result<(),
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn ext_to_delim(ext: &str) -> Result<char, Report> {
     let delim = match ext {
         "tsv" => '\t',

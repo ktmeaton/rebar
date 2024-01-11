@@ -1,7 +1,8 @@
 use clap::Parser;
 use color_eyre::eyre::{Report, Result};
-use rebar::dataset::{download, list};
-use rebar::{cli, cli::Cli};
+//use rebar::{download, list};
+use rebar::dataset;
+use rebar::{cli, Cli};
 
 #[tokio::main]
 async fn main() -> Result<(), Report> {
@@ -24,10 +25,9 @@ async fn main() -> Result<(), Report> {
     match args.command {
         // Dataset
         cli::Command::Dataset(args) => match args.command {
-            cli::dataset::Command::List(args) => _ = list::datasets(&args)?,
-            cli::dataset::Command::Download(mut args) => _ = download::dataset(&mut args).await?,
+            cli::dataset::Command::List(args) => _ = dataset::list(&args)?,
+            cli::dataset::Command::Download(args) => _ = dataset::download(&args).await?,
         },
-        _ => (),
         // // Run
         // Command::Run(mut args) => rebar::run::run(&mut args)?,
         // // Plot

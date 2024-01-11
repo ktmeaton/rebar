@@ -1,16 +1,16 @@
-pub mod tests;
-
 use crate::dataset::attributes::Name;
-use crate::utils::table::Table;
+use crate::Table;
 use clap::Parser;
 use color_eyre::eyre::{Report, Result};
+use serde::{Deserialize, Serialize};
+use structdoc::StructDoc;
 use strum::{EnumProperty, IntoEnumIterator};
 
 // ----------------------------------------------------------------------------
 // Structs
 
 /// Arguments for list datasets.
-#[derive(Parser, Debug)]
+#[derive(Debug, Deserialize, Parser, Serialize, StructDoc)]
 #[clap(verbatim_doc_comment)]
 pub struct Args {
     /// Dataset name.
@@ -33,7 +33,7 @@ impl Args {
 // Functions
 
 /// List datasets
-pub fn datasets(args: &Args) -> Result<Table<String>, Report> {
+pub fn list(args: &Args) -> Result<Table<String>, Report> {
     // table of name, tag, cli_version
     let mut table = Table::new();
     table.headers = vec![

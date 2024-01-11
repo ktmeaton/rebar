@@ -33,6 +33,11 @@ tempfile        = { version = "3.8.1",   default-features = false }
 tokio           = { version = "1.28.1",  default-features = false, features = ["macros", "rt-multi-thread"] }
 zstd            = { version = "0.13.0",  default-features = false }
 
+# [dev-dependencies]
+# cargo-llvm-cov    = { version = "0.6.0", default-features = false }
+# flamegraph        = { version = "0.6.4", default-features = false }
+# pretty_assertions = { version = "1.4.0", default-features = false }
+
 # Enable a small amount of optimization in debug mode
 [profile.dev]
 opt-level = 1

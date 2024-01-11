@@ -3,13 +3,17 @@ pub mod download;
 pub mod list;
 pub mod toy1;
 
+pub use crate::dataset::attributes::{Compatibility, Name, Summary, Tag};
+pub use crate::dataset::download::download;
+pub use crate::dataset::list::list;
+
 use serde::{Deserialize, Serialize};
 
 // ----------------------------------------------------------------------------
 // Dataset
 
-/// A dataset is a collection of named sequences, which have been aligned to a reference.
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
+/// A collection of named sequences aligned to a reference.
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct Dataset {
     /// Dataset metadata summary
     pub summary: attributes::Summary,

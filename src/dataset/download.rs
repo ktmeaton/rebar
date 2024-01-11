@@ -1,17 +1,20 @@
 use crate::dataset::attributes::{is_compatible, Name, Summary, Tag};
 // use crate::dataset::{sarscov2, toy1, Dataset};
 use crate::dataset::{toy1, Dataset};
+//use crate::Table;
 // use crate::{dataset, dataset::load};
-use crate::{utils, utils::remote_file::RemoteFile, utils::table::Table};
+use crate::{utils, utils::remote_file::RemoteFile};
 use clap::Parser;
 use color_eyre::eyre::{eyre, Report, Result};
 // use itertools::Itertools;
 use log::{info, warn};
+use serde::{Deserialize, Serialize};
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
+use structdoc::StructDoc;
 
 /// Download dataset arguments.
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Deserialize, Serialize, StructDoc)]
 #[clap(verbatim_doc_comment)]
 pub struct Args {
     /// Dataset name.
@@ -35,8 +38,24 @@ pub struct Args {
     pub summary: Option<PathBuf>,
 }
 
+impl Default for Args {
+    fn default() -> Self {
+        Args::new()
+    }
+}
+impl Args {
+    pub fn new() -> Self {
+        Args {
+            name: Name::default(),
+            tag: Tag::default(),
+            output_dir: PathBuf::new(),
+            summary: None,
+        }
+    }
+}
+
 /// Download dataset
-pub async fn dataset(args: &mut Args) -> Result<Dataset, Report> {
+pub async fn download(args: &Args) -> Result<Dataset, Report> {
     info!("Downloading dataset: {} {}", &args.name, &args.tag);
 
     let dataset = Dataset::new();
