@@ -1,365 +1,228 @@
-use crate::cli;
-use crate::dataset;
-use crate::export;
-use crate::recombination;
-
-use crate::dataset::{attributes::Name, SearchResult};
-use crate::recombination::Recombination;
-use crate::sequence::Sequence;
+use clap::{Args as ClapArgs, Parser};
 use color_eyre::eyre::{Report, Result, WrapErr};
-use indicatif::{style::ProgressStyle, ProgressBar};
-use itertools::Itertools;
-use log::{debug, info, warn};
-use noodles::fasta;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::fs::{create_dir_all, File};
-use std::io::{BufReader, Write};
+use either::*;
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
-/// Run rebar on input alignment and/or dataset population(s)
-pub fn run(args: &mut cli::run::Args) -> Result<(), Report> {
-    // ------------------------------------------------------------------------
-    // Check Output Directory
+/// ---------------------------------------------------------------------------
+/// Structs
+/// ---------------------------------------------------------------------------
 
-    // Warn if the directory already exists
-    if !args.output_dir.exists() {
-        info!("Creating output directory: {:?}", &args.output_dir);
-        create_dir_all(&args.output_dir)?;
-    } else {
-        warn!("Output directory already exists: {:?}", args.output_dir);
+/// Detect recombination in a dataset population and/or input alignment.
+#[derive(Clone, Debug, Deserialize, Parser, Serialize)]
+#[clap(verbatim_doc_comment)]
+pub struct Args {
+    /// Dataset directory.
+    #[clap(short = 'd', long, required = true)]
+    #[serde(
+        skip_serializing_if = "Args::is_default_dataset_dir",
+        skip_deserializing
+    )]
+    pub dataset_dir: PathBuf,
+
+    #[command(flatten)]
+    #[serde(skip_serializing_if = "Args::is_default_input", skip_deserializing)]
+    pub input: Input,
+
+    // Hidden attribute, will be used for edge cases.
+    #[arg(hide = true)]
+    pub population: Option<String>,
+
+    /// Restrict parent search to just these candidate parents.
+    #[arg(long, value_delimiter = ',')]
+    pub parents: Option<Vec<String>>,
+
+    /// Remove these populations from the dataset.
+    ///
+    /// Regardless of whether you use '*' or not, all descendants of the
+    /// specified populations will be removed.
+    #[arg(short = 'k', long)]
+    pub knockout: Option<Vec<String>>,
+
+    /// Number of bases to mask at the 5' and 3' ends.
+    ///
+    /// Comma separated. Use --mask 0,0 to disable masking.
+    #[arg(short = 'm', long, default_values_t = Args::default().mask)]
+    #[arg(long, value_delimiter = ',')]
+    pub mask: Vec<usize>,
+
+    /// Maximum number of search iterations to find each parent.
+    #[arg(short = 'i', long, default_value_t = Args::default().max_iter)]
+    pub max_iter: usize,
+
+    /// Maximum number of parents.
+    #[arg(long, default_value_t = Args::default().max_parents)]
+    pub max_parents: usize,
+
+    /// Minimum number of parents.
+    #[arg(long, default_value_t = Args::default().min_parents)]
+    pub min_parents: usize,
+
+    /// Minimum number of consecutive bases in a parental region.
+    #[arg(short = 'c', long, default_value_t = Args::default().min_consecutive)]
+    pub min_consecutive: usize,
+
+    /// Minimum length of a parental region.
+    #[arg(short = 'l', long, default_value_t = Args::default().min_length)]
+    pub min_length: usize,
+
+    /// Minimum number of substitutions in a parental region.
+    #[arg(short = 's', long, default_value_t = Args::default().min_subs)]
+    pub min_subs: usize,
+
+    /// Run a naive search, which does not use information about edge cases or known recombinant parents.
+    #[arg(short = 'u', long, default_value_t = Args::default().naive)]
+    pub naive: bool,
+
+    /// Output directory.
+    ///
+    /// If the directory does not exist, it will be created.
+    #[clap(short = 'o', long, required = true)]
+    #[serde(
+        skip_serializing_if = "Args::is_default_output_dir",
+        skip_deserializing
+    )]
+    pub output_dir: PathBuf,
+
+    /// Number of CPU threads to use.
+    #[clap(short = 't', long, default_value_t = Args::default().threads)]
+    #[serde(skip)]
+    pub threads: usize,
+}
+
+impl Default for Args {
+    fn default() -> Self {
+        Args {
+            dataset_dir: PathBuf::new(),
+            input: Input::default(),
+            knockout: None,
+            mask: vec![100, 200],
+            max_iter: 3,
+            min_parents: 2,
+            max_parents: 2,
+            min_consecutive: 3,
+            min_length: 500,
+            min_subs: 1,
+            naive: false,
+            output_dir: PathBuf::new(),
+            parents: None,
+            population: None,
+            threads: 1,
+        }
+    }
+}
+
+impl Args {
+    pub fn new() -> Self {
+        Args {
+            dataset_dir: PathBuf::new(),
+            input: Input::default(),
+            knockout: None,
+            mask: vec![0, 0],
+            max_iter: 0,
+            min_parents: 0,
+            max_parents: 0,
+            min_consecutive: 0,
+            min_length: 0,
+            min_subs: 0,
+            output_dir: PathBuf::new(),
+            parents: None,
+            population: None,
+            threads: 0,
+            naive: false,
+        }
     }
 
-    // ------------------------------------------------------------------------
-    // Export CLI args
-
-    // Save the CLI arguments to a file for troubleshooting
-    let path = args.output_dir.join("run_args.json");
-    info!("Exporting CLI Run Args: {path:?}");
-
-    // create output file
-    let mut file =
-        File::create(&path).wrap_err_with(|| format!("Failed to create file: {path:?}"))?;
-
-    // parse to string
-    let output = serde_json::to_string_pretty(args).wrap_err("Failed to CLI Run Args.")?;
-
-    // write to file
-    file.write_all(format!("{}\n", output).as_bytes())
-        .wrap_err_with(|| format!("Failed to write file: {path:?}"))?;
-
-    // ------------------------------------------------------------------------
-    // Multi-threading
-
-    // check how many threads are available on the system
-    let default_thread_pool =
-        rayon::ThreadPoolBuilder::new().build().wrap_err("Failed to build thread pool.")?;
-    let available_threads = default_thread_pool.current_num_threads();
-    info!("Number of threads available: {available_threads}");
-
-    // warn the user if they requested more than their system has available
-    // if so, default to the system threads
-    let mut num_threads = args.threads;
-    if num_threads > available_threads {
-        warn!("--threads {num_threads} is greater than the available threads.");
-        num_threads = available_threads;
+    /// Check if input is default.
+    pub fn is_default_dataset_dir(path: &Path) -> bool {
+        path == Args::default().dataset_dir
     }
 
-    // configure the global thread pool
-    info!("Using {} thread(s).", num_threads);
-    let result = rayon::ThreadPoolBuilder::new().num_threads(num_threads).build_global();
-
-    // the global thread pool might fail if it has already been initialized,
-    // we've seen this integration tests and unittests
-    if result.is_err() {
-        warn!("Failed to build global thread pool.");
+    /// Check if input is default.
+    pub fn is_default_input(input: &Input) -> bool {
+        input == &Args::default().input
+    }
+    /// Check if output directory is default.
+    pub fn is_default_output_dir(path: &Path) -> bool {
+        path == Args::default().output_dir
     }
 
-    // ------------------------------------------------------------------------
-    // Dataset
+    /// Override Args for edge case handling of particular recombinants.
+    pub fn apply_edge_case(&self, new: &Args) -> Result<Args, Report> {
+        let mut output = self.clone();
 
-    // Collect files in dataset_dir into a dataset object
-    // This mainly includes parent populations sequences
-    //   and optionally a phylogensetic representation.
-    let mut dataset = dataset::load::dataset(&args.dataset_dir, &args.mask)?;
+        output.max_iter = new.max_iter;
+        output.max_parents = new.max_parents;
+        output.min_consecutive = new.min_consecutive;
+        output.min_length = new.min_length;
+        output.min_subs = new.min_subs;
+        output.parents = new.parents.clone();
+        output.naive = new.naive;
 
-    // adjust search populations based on args.parents and args.knockout
-    // by default, use all populations in dataset
-    let mut parent_search_populations = dataset.populations.keys().cloned().collect_vec();
+        Ok(output)
+    }
 
-    return Ok(());
+    /// Read args from file.
+    ///
+    /// Returns an Either with options:
+    ///     Left: Args
+    ///     Right: Vector of Args
+    pub fn read(path: &Path, multiple: bool) -> Result<Either<Args, Vec<Args>>, Report> {
+        let input = std::fs::read_to_string(path)
+            .wrap_err_with(|| format!("Failed to read file: {path:?}."))?;
+        let output: Vec<Args> = serde_json::from_str(&input)
+            .wrap_err_with(|| format!("Failed to parse file: {path:?}"))?;
 
-    // // ------------------------------------------------------------------------
-    // // Input Parsing
-    // // ------------------------------------------------------------------------
+        if multiple {
+            Ok(Right(output))
+        } else {
+            Ok(Left(output[0].clone()))
+        }
+    }
 
-    // // To process --populations and --alignment in parallel simultaneously
-    // // we chain together fasta::Records.
+    /// Write args to file.
+    pub fn write(args: &[Args], path: &Path) -> Result<(), Report> {
+        // create file
+        let mut file =
+            File::create(path).wrap_err_with(|| format!("Failed to create file: {path:?}"))?;
 
-    // // ------------------------------------------------------------------------
-    // // Populations (--populations)
+        // parse to string
+        let args = serde_json::to_string_pretty(args)
+            .wrap_err_with(|| format!("Failed to parse: {args:?}"))?;
 
-    // let mut num_population_records = 0;
+        // write to file
+        file.write_all(format!("{}\n", args).as_bytes())
+            .wrap_err_with(|| format!("Failed to write file: {path:?}"))?;
 
-    // // get sequences for each user-requested population
-    // let sequences = if let Some(populations) = &args.input.populations {
+        Ok(())
+    }
+}
 
-    //     info!("Parsing input populations: {populations:?}");
+#[derive(ClapArgs, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[group(required = true, multiple = true)]
+pub struct Input {
+    /// Input fasta alignment.
+    #[arg(long, value_delimiter = ',')]
+    pub populations: Option<Vec<String>>,
 
-    //     let populations = populations.iter().map(|s| s as &str).collect_vec();
+    /// Input dataset population.
+    #[arg(long)]
+    pub alignment: Option<PathBuf>,
+}
 
-    //     dataset
-    //         .expand_populations(&populations)?
-    //         .into_iter()
-    //         .map(|p| {
-    //             let sequence = dataset.populations.get(p).unwrap();
-    //             let id = format!("population_{}", sequence.id);
-    //             num_population_records += 1;
-    //             format!(">{id}\n{}", sequence.seq.iter().join(""))
-    //         })
-    //         .join("\n")
-    // } else {
-    //     String::new()
-    // };
+impl Default for Input {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-    // let mut reader = fasta::Reader::new(sequences.as_bytes());
-    // let population_records = reader.records();
-
-    // // configure progress bar style
-    // let progress_bar_style = ProgressStyle::with_template(
-    //     "{bar:40} {pos}/{len} ({percent}%) | Sequences / Second: {per_sec} | Elapsed: {elapsed_precise} | ETA: {eta_precise}"
-    // ).expect("Failed to create progress bar from template.");
-
-    // // init a container to hold query sequences, dataset
-    // // populations and/or sequences from an input alignment
-    // let mut sequences = Vec::new();
-    // // keep track of ids we've seen to remove duplicates later
-    // let mut ids_seen = Vec::new();
-
-    // // ------------------------------------------------------------------------
-    // // Parse Input Populations
-    // // ------------------------------------------------------------------------
-
-    // // this step is pretty fast, don't really need a progress bar here
-
-    // if let Some(populations) = &args.input.populations {
-    //     info!("Parsing input populations: {populations:?}");
-
-    //     // limit the amount of warnings emitted
-    //     let mut num_warnings = 0;
-    //     let max_warnings = 10;
-
-    //     dataset.expand_populations(populations)?.into_iter().for_each(|p| {
-    //         if !dataset.populations.contains_key(&p) {
-    //             if num_warnings < max_warnings {
-    //                 warn!("Population {p} is not in the dataset populations fasta.");
-    //             } else {
-    //                 warn!("... (Additional warnings ommitted)");
-    //             }
-    //             num_warnings += 1;
-    //         } else {
-    //             debug!("Adding population {p} to query sequences.");
-    //             let mut sequence = dataset.populations.get(&p).unwrap().clone();
-    //             sequence.id = format!("population_{}", sequence.id);
-    //             ids_seen.push(sequence.id.clone());
-    //             sequences.push(sequence.clone());
-    //         }
-    //     });
-    // }
-
-    // // ------------------------------------------------------------------------
-    // // Parse Input Alignment
-    // // ------------------------------------------------------------------------
-
-    // if let Some(alignment) = &args.input.alignment {
-    //     info!("Loading query alignment: {:?}", alignment);
-    //     let file = File::open(alignment);
-    //     let mut reader = file.map(BufReader::new).map(fasta::Reader::new)?;
-
-    //     for result in reader.records() {
-    //         let record = result.wrap_err("Unable to parse alignment: {alignment:?}")?;
-    //         let sequence =
-    //             Sequence::from_record(record, Some(&dataset.reference), &args.mask)?;
-
-    //         // check for duplicates
-    //         if ids_seen.contains(&sequence.id) {
-    //             warn!(
-    //                 "Sequence {} is duplicated, retaining first one.",
-    //                 sequence.id
-    //             );
-    //             continue;
-    //         } else {
-    //             ids_seen.push(sequence.id.clone());
-    //             sequences.push(sequence);
-    //         }
-    //     }
-    // }
-
-    // // ------------------------------------------------------------------------
-    // // Parse and expand input parents
-
-    // if let Some(parents) = &args.parents {
-    //     info!("Parsing input parents: {:?}", &parents);
-    //     args.parents = Some(dataset.expand_populations(parents)?);
-    // }
-
-    // // ------------------------------------------------------------------------
-    // // Dataset Knockout
-    // // ------------------------------------------------------------------------
-
-    // if let Some(knockout) = &args.knockout {
-    //     info!("Performing dataset knockout: {knockout:?}");
-
-    //     // Check to make sure wildcards are used in all knockouts
-    //     // Weird things happend if you don't!
-    //     let knockout_no_wildcard =
-    //         knockout.iter().filter(|p| !p.contains('*')).collect_vec();
-    //     if !knockout_no_wildcard.is_empty() {
-    //         warn!("Proceed with caution! Weird things can happen when you run a knockout without descendants (no '*'): {knockout_no_wildcard:?}.")
-    //     }
-
-    //     // Expanded populations (in case wildcard * is provided)
-    //     let knockout_expanded = dataset.expand_populations(knockout)?;
-    //     debug!("Expanded dataset knockout: {knockout:?}");
-    //     debug!("Removing knockout populations from the fasta.");
-    //     dataset.populations.retain(|id, _| !knockout_expanded.contains(id));
-
-    //     debug!("Removing knockout populations from the mutations.");
-    //     dataset.mutations.iter_mut().for_each(|(_sub, populations)| {
-    //         populations.retain(|p| !knockout_expanded.contains(p));
-    //     });
-
-    //     if !dataset.phylogeny.is_empty() {
-    //         for p in &knockout_expanded {
-    //             dataset.phylogeny.remove(p)?;
-    //         }
-    //     }
-
-    //     args.knockout = Some(knockout_expanded);
-    // }
-
-    // // ------------------------------------------------------------------------
-    // // Recombination Search
-    // // ------------------------------------------------------------------------
-
-    // info!("Running recombination search.");
-
-    // // this step is the slowest, use progress bar and parallel threads
-    // let progress_bar = ProgressBar::new(sequences.len() as u64);
-    // progress_bar.set_style(progress_bar_style);
-
-    // // adjust search populations based on args.parents and args.knockout
-    // let mut parent_search_populations = dataset.populations.keys().collect_vec();
-    // // if args.parents supplied on the CLI
-    // if let Some(populations) = &args.parents {
-    //     parent_search_populations.retain(|pop| populations.contains(pop))
-    // }
-    // // if args.knockout supplied on the CLI
-    // if let Some(populations) = &args.knockout {
-    //     parent_search_populations.retain(|pop| !populations.contains(pop))
-    // }
-
-    // // Search for the best match and recombination parents for each sequence.
-    // // This loop/closure is structured weirdly for rayon compatability, and the
-    // // fact that we need to return multiple types of objects
-    // let results: Vec<(SearchResult, Recombination)> = sequences
-    //     .par_iter()
-    //     .map(|sequence| {
-    //         // initialize with default results, regardless of whether our
-    //         // searches "succeed", we're going to return standardized data
-    //         // structures to build our exports upon (ex. linelist columns)
-    //         // which will include the "negative" results
-    //         let mut best_match = SearchResult::new(sequence);
-    //         let mut recombination = Recombination::new(sequence);
-
-    //         // ------------------------------------------------------------------------
-    //         // Best Match (Consensus)
-    //         //
-    //         // search for the best match in the dataset to this sequence.
-    //         // this will represent the consensus population call.
-
-    //         debug!("Identifying best match (consensus population).");
-    //         let search_result = dataset.search(sequence, None, None);
-
-    //         // if we found a match, proceed with recombinant search
-    //         if let Ok(search_result) = search_result {
-    //             best_match = search_result;
-
-    //             debug!("Searching for recombination parents.");
-    //             let parent_search = recombination::search::all_parents(
-    //                 sequence,
-    //                 &dataset,
-    //                 &mut best_match,
-    //                 &parent_search_populations,
-    //                 args,
-    //             );
-    //             match parent_search {
-    //                 Ok(search_result) => recombination = search_result,
-    //                 Err(e) => debug!("Parent search did not succeed. {e}"),
-    //             }
-    //         }
-    //         // what to do if not a single population matched?
-    //         else {
-    //             // temporary handling for root population B
-    //             if dataset.name == Name::SarsCov2 {
-    //                 if sequence.id == "population_B" {
-    //                     best_match.consensus_population = "B".to_string();
-    //                 }
-    //             } else {
-    //                 debug!("No matches found.");
-    //             }
-    //         }
-
-    //         progress_bar.inc(1);
-
-    //         (best_match, recombination)
-    //     })
-    //     .collect();
-
-    // progress_bar.finish();
-
-    // // ------------------------------------------------------------------------
-    // // Export Linelist (single)
-
-    // let outpath_linelist = args.output_dir.join("linelist.tsv");
-    // info!("Exporting linelist: {outpath_linelist:?}");
-
-    // let linelist_table = export::linelist(&results, &dataset)?;
-    // //let linelist_table = export::linelist(&best_matches, &recombinations, &dataset)?;
-    // linelist_table.write(&outpath_linelist)?;
-
-    // // ------------------------------------------------------------------------
-    // // Export Barcodes (multiple, collected by recombinant)
-
-    // let outdir_barcodes = args.output_dir.join("barcodes");
-
-    // create_dir_all(&outdir_barcodes)?;
-
-    // // get unique keys of recombinants identified
-    // let unique_keys = results
-    //     .iter()
-    //     .filter_map(|(_b, r)| (*r.unique_key != String::new()).then_some(&r.unique_key))
-    //     .unique()
-    //     .collect_vec();
-
-    // if unique_keys.is_empty() {
-    //     warn!("No recombination detected, no barcodes will be outputted.");
-    // } else {
-    //     info!("Exporting recombination barcodes: {outdir_barcodes:?}");
-    // }
-
-    // for unique_key in unique_keys {
-    //     // filter recombinations down to just this recombinant unique_key
-    //     let unique_rec = results
-    //         .iter()
-    //         .filter_map(|(_b, r)| (r.unique_key == *unique_key).then_some(r))
-    //         .cloned()
-    //         .collect_vec();
-    //     // combine all the sample barcode tables
-    //     let barcode_table =
-    //         recombination::combine_tables(&unique_rec, &dataset.reference)?;
-    //     let barcode_table_path = outdir_barcodes.join(format!("{unique_key}.tsv"));
-    //     barcode_table.write(&barcode_table_path)?;
-    // }
-
-    // info!("Done.");
-    // Ok(())
+impl Input {
+    pub fn new() -> Self {
+        Input {
+            populations: None,
+            alignment: None,
+        }
+    }
 }

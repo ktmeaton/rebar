@@ -1,6 +1,4 @@
-pub mod download;
-pub mod list;
-
+use crate::dataset::{download, list};
 use clap::{Parser, Subcommand};
 
 /// List or download datasets.

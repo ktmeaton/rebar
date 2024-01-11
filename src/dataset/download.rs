@@ -1,17 +1,45 @@
-use crate::cli;
-use crate::dataset::attributes::{check_compatibility, Name, Summary};
-use crate::dataset::{sarscov2, toy1, Dataset};
-use crate::{dataset, dataset::load};
+use crate::dataset::attributes::{is_compatible, Name, Summary, Tag};
+// use crate::dataset::{sarscov2, toy1, Dataset};
+use crate::dataset::{toy1, Dataset};
+// use crate::{dataset, dataset::load};
 use crate::{utils, utils::remote_file::RemoteFile, utils::table::Table};
-use color_eyre::eyre::{Report, Result};
-use itertools::Itertools;
+use clap::Parser;
+use color_eyre::eyre::{eyre, Report, Result};
+// use itertools::Itertools;
 use log::{info, warn};
 use std::fs::create_dir_all;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Download dataset arguments.
+#[derive(Parser, Debug)]
+#[clap(verbatim_doc_comment)]
+pub struct Args {
+    /// Dataset name.
+    #[clap(short = 'r', long, required = true)]
+    pub name: Name,
+
+    /// Dataset tag.
+    ///
+    /// A date (YYYY-MM-DD), or 'nightly', or 'custom'
+    #[clap(short = 't', long, required = true)]
+    pub tag: Tag,
+
+    /// Output directory.
+    ///
+    /// If the directory does not exist, it will be created.
+    #[clap(short = 'o', long, required = true)]
+    pub output_dir: PathBuf,
+
+    /// Download dataset from a summary.json snapshot.
+    #[clap(short = 's', long)]
+    pub summary: Option<PathBuf>,
+}
 
 /// Download dataset
-pub async fn dataset(args: &mut cli::dataset::download::Args) -> Result<Dataset, Report> {
+pub async fn dataset(args: &mut Args) -> Result<Dataset, Report> {
     info!("Downloading dataset: {} {}", &args.name, &args.tag);
+
+    let dataset = Dataset::new();
 
     // --------------------------------------------------------------------
     // Optional Input Summary Snapshot
@@ -38,7 +66,9 @@ pub async fn dataset(args: &mut cli::dataset::download::Args) -> Result<Dataset,
     // --------------------------------------------------------------------
     // Compatibility Check
 
-    check_compatibility(&args.name, &args.tag)?;
+    if !is_compatible(&args.name, &args.tag)? {
+        Err(eyre!("Dataset incompatibility"))?;
+    }
 
     // Warn if the directory already exists
     if !args.output_dir.exists() {
@@ -58,122 +88,130 @@ pub async fn dataset(args: &mut cli::dataset::download::Args) -> Result<Dataset,
     info!("Downloading reference: {output_path:?}");
 
     summary.reference = if args.summary.is_some() {
-        snapshot(&summary.reference, &output_path).await?
+        match summary.reference {
+            Some(remote_file) => snapshot(&remote_file, &output_path).await.ok(),
+            None => None,
+        }
     } else {
         match args.name {
-            Name::SarsCov2 => sarscov2::download::reference(&args.tag, &output_path).await?,
-            Name::Toy1 => toy1::download::reference(&args.tag, &output_path)?,
+            //Name::SarsCov2 => sarscov2::download::reference(&args.tag, &output_path).await?,
+            Name::Toy1 => toy1::create::reference(&args.tag, &output_path).ok(),
             _ => todo!(),
         }
     };
 
-    // --------------------------------------------------------------------
-    // Populations
+    // // --------------------------------------------------------------------
+    // // Populations
 
-    let output_path = args.output_dir.join("populations.fasta");
-    info!("Downloading populations: {output_path:?}");
+    // let output_path = args.output_dir.join("populations.fasta");
+    // info!("Downloading populations: {output_path:?}");
 
-    summary.populations = if args.summary.is_some() {
-        dataset::download::snapshot(&summary.populations, &output_path).await?
-    } else {
-        match args.name {
-            Name::SarsCov2 => sarscov2::download::populations(&args.tag, &output_path).await?,
-            Name::Toy1 => toy1::download::populations(&args.tag, &output_path)?,
-            _ => todo!(),
-        }
-    };
+    // summary.populations = if args.summary.is_some() {
+    //     dataset::download::snapshot(&summary.populations, &output_path).await?
+    // } else {
+    //     match args.name {
+    //         Name::SarsCov2 => sarscov2::download::populations(&args.tag, &output_path).await?,
+    //         Name::Toy1 => toy1::download::populations(&args.tag, &output_path)?,
+    //         _ => todo!(),
+    //     }
+    // };
 
-    // --------------------------------------------------------------------
-    // Annotations
+    // // --------------------------------------------------------------------
+    // // Annotations
 
-    let output_path = args.output_dir.join("annotations.tsv");
-    info!("Creating annotations: {output_path:?}");
+    // let output_path = args.output_dir.join("annotations.tsv");
+    // info!("Creating annotations: {output_path:?}");
 
-    let annotations = match args.name {
-        Name::SarsCov2 => sarscov2::annotations::build()?,
-        Name::Toy1 => toy1::annotations::build()?,
-        _ => todo!(),
-    };
-    annotations.write(&output_path)?;
+    // let annotations = match args.name {
+    //     Name::SarsCov2 => sarscov2::annotations::build()?,
+    //     Name::Toy1 => toy1::annotations::build()?,
+    //     _ => todo!(),
+    // };
+    // annotations.write(&output_path)?;
 
-    // --------------------------------------------------------------------
-    // Graph (Phylogeny)
+    // // --------------------------------------------------------------------
+    // // Graph (Phylogeny)
 
-    let output_path = args.output_dir.join("phylogeny.json");
-    info!("Building phylogeny: {output_path:?}");
+    // let output_path = args.output_dir.join("phylogeny.json");
+    // info!("Building phylogeny: {output_path:?}");
 
-    let phylogeny = match args.name {
-        Name::SarsCov2 => sarscov2::phylogeny::build(&mut summary, &args.output_dir).await?,
-        Name::Toy1 => toy1::phylogeny::build()?,
-        _ => todo!(),
-    };
-    phylogeny.write(&output_path)?;
-    // Also write as .dot file for graphviz visualization.
-    let output_path = args.output_dir.join("phylogeny.dot");
-    info!("Exporting graphviz phylogeny: {output_path:?}");
-    phylogeny.write(&output_path)?;
+    // let phylogeny = match args.name {
+    //     Name::SarsCov2 => sarscov2::phylogeny::build(&mut summary, &args.output_dir).await?,
+    //     Name::Toy1 => toy1::phylogeny::build()?,
+    //     _ => todo!(),
+    // };
+    // phylogeny.write(&output_path)?;
+    // // Also write as .dot file for graphviz visualization.
+    // let output_path = args.output_dir.join("phylogeny.dot");
+    // info!("Exporting graphviz phylogeny: {output_path:?}");
+    // phylogeny.write(&output_path)?;
 
-    // --------------------------------------------------------------------
-    // Export Mutations
+    // // --------------------------------------------------------------------
+    // // Export Mutations
 
-    let output_path = args.output_dir.join("mutations.json");
-    info!("Mapping mutations to populations: {output_path:?}");
-    let mask = vec![0, 0];
-    let (_populations, mutations) = dataset::load::parse_populations(
-        &summary.populations.local_path,
-        &summary.reference.local_path,
-        &mask,
-    )?;
+    // let output_path = args.output_dir.join("mutations.json");
+    // info!("Mapping mutations to populations: {output_path:?}");
+    // let mask = vec![0, 0];
+    // let (_populations, mutations) = dataset::load::parse_populations(
+    //     &summary.populations.local_path,
+    //     &summary.reference.local_path,
+    //     &mask,
+    // )?;
 
-    // --------------------------------------------------------------------
-    // Create Edge Cases
-    //
-    // Edge cases are simply a vector of the CLI Run Args (cli::run::Args)
-    // customized to particular recombinants.
+    // // --------------------------------------------------------------------
+    // // Create Edge Cases
+    // //
+    // // Edge cases are simply a vector of the CLI Run Args (cli::run::Args)
+    // // customized to particular recombinants.
 
-    let output_path = args.output_dir.join("edge_cases.json");
-    info!("Creating edge cases: {output_path:?}");
+    // let output_path = args.output_dir.join("edge_cases.json");
+    // info!("Creating edge cases: {output_path:?}");
 
-    let mut edge_cases = match args.name {
-        Name::SarsCov2 => dataset::sarscov2::edge_cases::default()?,
-        Name::Toy1 => dataset::toy1::edge_cases::default()?,
-        _ => todo!(),
-    };
-    let manual_populations = edge_cases.clone().into_iter().filter_map(|e| e.population).collect_vec();
+    // let mut edge_cases = match args.name {
+    //     Name::SarsCov2 => dataset::sarscov2::edge_cases::default()?,
+    //     Name::Toy1 => dataset::toy1::edge_cases::default()?,
+    //     _ => todo!(),
+    // };
+    // let manual_populations =
+    //     edge_cases.clone().into_iter().filter_map(|e| e.population).collect_vec();
 
-    phylogeny.get_problematic_recombinants()?.into_iter().try_for_each(|r| {
-        //let recombinant = r.to_string();
-        let parents = phylogeny.get_parents(r)?;
-        warn!("Recombinant {r} is problematic. Parents are not sister taxa: {parents:?}");
-        if manual_populations.contains(&r.to_string()) {
-            warn!("Manual edge case exists: {r:?}");
-        } else {
-            warn!("Creating auto edge case: {r:?}");
-            let population = Some(r.to_string());
-            let parents = Some(parents.to_vec().into_iter().map(String::from).collect());
-            let edge_case = cli::run::Args { population, parents, ..Default::default() };
-            edge_cases.push(edge_case);
-        }
+    // phylogeny.get_problematic_recombinants()?.into_iter().try_for_each(|r| {
+    //     //let recombinant = r.to_string();
+    //     let parents = phylogeny.get_parents(r)?;
+    //     warn!("Recombinant {r} is problematic. Parents are not sister taxa: {parents:?}");
+    //     if manual_populations.contains(&r.to_string()) {
+    //         warn!("Manual edge case exists: {r:?}");
+    //     } else {
+    //         warn!("Creating auto edge case: {r:?}");
+    //         let population = Some(r.to_string());
+    //         let parents = Some(parents.to_vec().into_iter().map(String::from).collect());
+    //         let edge_case = cli::run::Args {
+    //             population,
+    //             parents,
+    //             ..Default::default()
+    //         };
+    //         edge_cases.push(edge_case);
+    //     }
 
-        Ok::<(), Report>(())
-    });
+    //     Ok::<(), Report>(())
+    // });
 
-    // --------------------------------------------------------------------
-    // Export
+    // // --------------------------------------------------------------------
+    // // Export
 
-    let dataset = load::dataset(&args.output_dir, &mask)?;
+    // let dataset = load::dataset(&args.output_dir, &mask)?;
 
-    let path = args.output_dir.join("edge_cases.json");
-    info!("Exporting edge cases: {path:?}");
-    dataset.write_edge_cases(&path)?;
+    // let path = args.output_dir.join("edge_cases.json");
+    // info!("Exporting edge cases: {path:?}");
+    // dataset.write_edge_cases(&path)?;
 
-    let path = args.output_dir.join("mutations.tsv");
-    info!("Exporting mutations: {path:?}");
-    dataset.write_mutations(&path)?;
+    // let path = args.output_dir.join("mutations.tsv");
+    // info!("Exporting mutations: {path:?}");
+    // dataset.write_mutations(&path)?;
 
-    let path = args.output_dir.join("summary.json");
-    info!("Exporting summary: {path:?}");
-    dataset.write_summary(&path)?;
+    // let path = args.output_dir.join("summary.json");
+    // info!("Exporting summary: {path:?}");
+    // dataset.write_summary(&path)?;
 
     // --------------------------------------------------------------------
     // Finish

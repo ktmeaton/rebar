@@ -1,5 +1,5 @@
-use crate::utils;
-use color_eyre::eyre::{eyre, ContextCompat, Report, Result, WrapErr};
+//use crate::utils;
+use color_eyre::eyre::{eyre, Report, Result, WrapErr};
 use color_eyre::Help;
 use itertools::Itertools;
 use log::debug;
@@ -9,455 +9,501 @@ use petgraph::visit::{Dfs, IntoNodeReferences};
 use petgraph::Direction;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::fmt::Display;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::Write;
 use std::path::Path;
 
 // ----------------------------------------------------------------------------
 // Phylogeny
 
+/// Phylogenetic representation of a dataset's population history as an
+/// ancestral recombination graph (ARG).
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Phylogeny<'graph> {
-    pub graph: Graph<String, isize>,
-    // we will parse recombinants on load/read
-    //#[serde(skip_serializing, skip_deserializing)]
-    pub recombinants: &'graph [&'graph str],
-    // recombinants_all includes descendants of recombinant nodes
-    //#[serde(skip_serializing, skip_deserializing)]
-    pub recombinants_all: &'graph [&'graph str],
+pub struct Phylogeny<T> {
+    // Directed graph of parents and children.
+    pub graph: Graph<T, usize>,
+    // Recombinants with multiple parents.
+    pub recombinants: Vec<T>,
+    // // Recombinants with multiple parents plus their descendants
+    pub recombinants_with_descendants: Vec<T>,
 }
 
-impl<'graph> Default for Phylogeny<'graph> {
+impl<T> Default for Phylogeny<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'graph> Phylogeny<'graph> {
+impl<T> Phylogeny<T> {
     pub fn new() -> Self {
         Phylogeny {
             graph: Graph::new(),
-            recombinants: &[],
-            recombinants_all: &[],
+            recombinants: Vec::new(),
+            recombinants_with_descendants: Vec::new(),
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.graph.node_count() == 0
-    }
-
-    /// Return true if a node name is a recombinant.
-    ///
-    /// Checks the number of incoming edges to a node, as recombinants
-    /// will have more than 1 (ie. more than 1 parent).
-    pub fn is_recombinant(&self, name: &str) -> Result<bool, Report> {
-        let node = self.get_node(name)?;
-        let mut edges = self.graph.neighbors_directed(node, Direction::Incoming).detach();
-
-        let mut num_edges = 0;
-        while let Some(_edge) = edges.next_edge(&self.graph) {
-            num_edges += 1;
-            // early return, just in case it helps
-            if num_edges > 1 {
-                return Ok(true);
-            }
-        }
-        Ok(num_edges > 1)
-    }
-
-    /// Get populations names (all named nodes)
-    pub fn get_names(&self) -> &[&str] {
-        self.graph
-            .node_references()
-            .into_iter()
-            .filter(|(_i, n)| !n.is_empty())
-            .map(|(_i, n)| n.as_str())
-            .unique()
-            .collect()
-    }
-
-    /// Get recombinant node names.
-    ///
-    /// descendants will decide if recombinant descendants should be included
-    pub fn get_recombinants(&self, descendants: bool) -> &[&str] {
-        match descendants {
-            // include all descendants of recombinant nodes
-            true => self
-                .get_names()
-                .into_iter()
-                .filter(|n| {
-                    let mut is_recombinant = false;
-                    if let Ok(result) = self.get_recombinant_ancestor(&n) {
-                        if let Some(recombinant) = result {
-                            is_recombinant = true;
-                        }
-                    }
-                    is_recombinant
-                })
-                .unique()
-                .collect_vec(),
-            // include only the primary recombinant nodes
-            false => self
-                .get_names()
-                .into_iter()
-                .filter(|n| self.is_recombinant(n).unwrap_or(false))
-                .unique()
-                .collect_vec(),
-        }
-    }
-
-    /// Get non-recombinants
-    pub fn get_non_recombinants_all(&self) -> &[&str] {
-        self.get_names().into_iter().filter(|n| !self.recombinants_all.contains(n)).collect()
-    }
-
-    /// Remove a single named node in the graph.
-    ///
-    /// Connect parents to children to fill the hole.
-    pub fn remove(&mut self, name: &str) -> Result<(), Report> {
-        // Delete the node
-        debug!("Removing node: {name}");
-
-        let node = self.get_node(name)?;
-
-        // get some attributes before we remove it
-        let parents = self.get_parents(name)?;
-        let mut children = self.get_children(name)?;
-        let is_recombinant = self.is_recombinant(name)?;
-
-        // Delete the node
-        self.graph.remove_node(node).unwrap_or_default();
-
-        // If it was an interior node, connect parents and child
-        children.iter().for_each(|c| {
-            let c_node = self.get_node(c).expect("Child {c} is not in graph.");
-            //debug!("Connecting child {c} to new parent(s): {parents:?}");
-            parents.iter().for_each(|p| {
-                let p_node = self.get_node(p).expect("Parent {p} is not in graph.");
-                self.graph.add_edge(p_node, c_node, 1);
-            })
-        });
-
-        // If it was a primary recombinant node, make all children primary recombinants
-        if is_recombinant {
-            self.recombinants.append(&mut children);
-        }
-
-        // Update the recombinants attributes
-        self.recombinants.retain(|n| *n != name);
-        self.recombinants_all.retain(|n| *n != name);
-        Ok(())
-    }
-
-    /// Prune a clade from the graph.
-    ///
-    /// Removes named node and all descendants.
-    pub fn prune(&mut self, name: &str) -> Result<&[&str], Report> {
-        let recombination = true;
-        let descendants = self.get_descendants(name, recombination)?;
-        for d in descendants {
-            self.remove(&d)?;
-        }
-
-        Ok(&descendants[..])
-    }
-
-    /// Read phylogeny from file.
-    pub fn read(path: &Path) -> Result<Phylogeny, Report> {
-        let phylogeny = std::fs::read_to_string(path)
-            .wrap_err_with(|| format!("Failed to read file: {path:?}."))?;
-        let mut phylogeny: Phylogeny = serde_json::from_str(&phylogeny)
-            .wrap_err_with(|| format!("Failed to parse file: {path:?}."))?;
-
-        phylogeny.recombinants = phylogeny.get_recombinants(false);
-        phylogeny.recombinants_all = phylogeny.get_recombinants(true);
-
-        Ok(phylogeny)
-    }
-
-    /// Write phylogeny to file.
-    pub fn write(&self, path: &Path) -> Result<(), Report> {
-        // Create output file
-        let mut file = File::create(path)?;
-        // Check format based on extension
-        let ext = utils::path_to_ext(Path::new(path))?;
-
-        // format conversion
-        let output = match ext.as_str() {
-            // ----------------------------------------------------------------
-            // DOT file for graphviz
-            "dot" => {
-                let mut output =
-                    format!("{}", Dot::with_config(&self.graph, &[Config::EdgeNoLabel]));
-                // set graph id (for cytoscape)
-                output = str::replace(&output, "digraph", "digraph G");
-                // set horizontal (Left to Right) format for tree-like visualizer
-                output = str::replace(&output, "digraph {", "digraph {\n    rankdir=\"LR\";");
-                output
-            }
-            // ----------------------------------------------------------------
-            // JSON for rebar
-            "json" => serde_json::to_string_pretty(&self)
-                .unwrap_or_else(|_| panic!("Failed to parse: {self:?}")),
-            _ => {
-                return Err(
-                    eyre!("Phylogeny write for extension .{ext} is not supported.")
-                        .suggestion("Please try .json or .dot instead."),
-                )
-            }
-        };
-
-        // Write to file
-        file.write_all(output.as_bytes())
-            .unwrap_or_else(|_| panic!("Failed to write file: {:?}.", path));
-
-        Ok(())
-    }
-
-    // Get all descendants of a population.
-    //
-    // Returns a big pile (single vector) of all descendants in all paths to tips.
-    // Reminder, this function will also include name (the parent)
-    pub fn get_descendants(&self, name: &str, recombination: bool) -> Result<&[&str], Report> {
-        let mut descendants = Vec::new();
-
-        // Find the node that matches the name
-        let node = self.get_node(name)?;
-        // Construct a depth-first-search (Dfs)
-        let mut dfs = Dfs::new(&self.graph, node);
-
-        // Skip over self?
-        // dfs.next(&self.graph);
-        // Iterate over descendants
-        while let Some(nx) = dfs.next(&self.graph) {
-            // Get node name
-            let nx_name = self.get_name(&nx)?;
-            descendants.push(nx_name);
-        }
-
-        // exclude descendants that are novel recombinants
-        if !recombination {
-            let recombinant_ancestor = self.get_recombinant_ancestor(name).ok();
-            descendants = descendants
-                .into_iter()
-                .filter(|desc| recombinant_ancestor == self.get_recombinant_ancestor(desc).ok())
-                .collect_vec();
-        }
-
-        Ok(&descendants[..])
-    }
-
-    /// Get parent names of node
-    pub fn get_parents(&self, name: &str) -> Result<&[&str], Report> {
-        let mut parents = Vec::new();
-
-        let node = self.get_node(name)?;
-        let mut neighbors = self.graph.neighbors_directed(node, Direction::Incoming).detach();
-        while let Some(parent_node) = neighbors.next_node(&self.graph) {
-            let parent_name = self.get_name(&parent_node)?;
-            parents.push(parent_name);
-        }
-
-        Ok(&parents[..])
-    }
-
-    /// Get children names of node
-    pub fn get_children(&self, name: &str) -> Result<&[&str], Report> {
-        let mut children = Vec::new();
-
-        let node = self.get_node(name)?;
-        let mut neighbors = self.graph.neighbors_directed(node, Direction::Outgoing).detach();
-        while let Some(child_node) = neighbors.next_node(&self.graph) {
-            let child_name = self.get_name(&child_node)?;
-            children.push(child_name);
-        }
-
-        // children order is last added to first added, reverse this
-        children.reverse();
-
-        Ok(&children[..])
-    }
-
-    /// Get problematic recombinants, where the parents are not sister taxa.
-    /// They might be parent-child instead.
-    pub fn get_problematic_recombinants(&self) -> Result<&[&str], Report> {
-        let mut problematic_recombinants = Vec::new();
-        let recombination = true;
-
-        for recombinant in &self.recombinants {
-            let parents = self.get_parents(recombinant)?;
-            for i1 in 0..parents.len() - 1 {
-                let p1 = &parents[i1];
-                for p2 in parents.iter().skip(i1 + 1) {
-                    let mut descendants = self.get_descendants(p2, recombination)?;
-                    let ancestors = self.get_ancestors(p2)?.into_iter().flatten().collect_vec();
-                    descendants.extend(ancestors);
-
-                    if descendants.contains(p1) {
-                        problematic_recombinants.push(recombinant.clone());
-                        break;
-                    }
-                }
-            }
-        }
-
-        Ok(&problematic_recombinants[..])
-    }
-
-    /// Get all paths from the origin node to the destination node, always traveling
-    /// in the specified direction (Incoming towards root, Outgoing towards tips)/
-    /// petgraph must have this already implemented, but I can't find it in docs
-    pub fn get_paths(
-        &self,
-        origin: &str,
-        dest: &str,
-        direction: petgraph::Direction,
-    ) -> Result<&[&[&str]], Report> {
-        // container to hold the paths we've found, is a vector of vectors
-        // because there might be recombinants with multiple paths
-        let mut paths: Vec<Vec<&str>> = Vec::new();
-
-        // check that the origin and dest actually exist in the graph
-        let origin_node = self.get_node(origin)?;
-        let _dest_node = self.get_node(dest)?;
-
-        // Check if we've reached the destination
-        if origin == dest {
-            paths.push(vec![origin]);
-        }
-        // Otherwise, continue the search!
-        else {
-            let mut neighbors = self.graph.neighbors_directed(origin_node, direction).detach();
-            while let Some(parent_node) = neighbors.next_node(&self.graph) {
-                // convert the parent graph index to a string name
-                let parent_name = self.get_name(&parent_node)?;
-
-                // recursively get path of each parent to the destination
-                let mut parent_paths = self.get_paths(&parent_name, dest, direction)?;
-
-                // prepend the origin to the paths
-                parent_paths.iter_mut().for_each(|p| p.insert(0, origin));
-
-                // update the paths container to return at end of function
-                for p in parent_paths {
-                    paths.push(p);
-                }
-            }
-        }
-
-        Ok(paths)
-    }
-
-    /// NOTE: Don't think this will work with 3+ parents yet, to be tested.
-    pub fn get_ancestors(&self, name: &str) -> Result<&[&[&str]], Report> {
-        let mut paths = self.get_paths(name, "root", petgraph::Incoming)?;
-
-        // remove self name (first element) from paths, and then reverse order
-        // so that it's ['root'.... name]
-        paths.iter_mut().for_each(|p| {
-            p.remove(0);
-            p.reverse();
-        });
-
-        Ok(paths)
-    }
-
-    /// Identify the most recent common ancestor shared between all node names.
-    pub fn get_common_ancestor(&self, names: &[&str]) -> Result<&str, Report> {
-        // if only one node name was provided, just return it
-        if names.len() == 1 {
-            return Ok(names[0]);
-        }
-
-        // mass pile of all ancestors of all named nodes
-        let ancestors: Vec<_> = names
-            .iter()
-            .map(|pop| {
-                let paths = self.get_paths(pop, "root", Direction::Incoming)?;
-                let ancestors = paths.into_iter().flatten().unique().collect_vec();
-                debug!("{pop}: {ancestors:?}");
-                Ok(ancestors)
-            })
-            .collect::<Result<Vec<_>, Report>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-
-        // get ancestors shared by all sequences
-        let common_ancestors: Vec<_> = ancestors
-            .iter()
-            .unique()
-            .filter(|anc| {
-                let count = ancestors.iter().filter(|pop| pop == anc).count();
-                count == names.len()
-            })
-            .collect();
-
-        debug!("common_ancestors: {common_ancestors:?}");
-
-        // get the depths (distance to root) of the common ancestors
-        let depths = common_ancestors
-            .into_iter()
-            .map(|pop| {
-                let paths = self.get_paths(pop, "root", Direction::Incoming)?;
-                let longest_path =
-                    paths.into_iter().max_by(|a, b| a.len().cmp(&b.len())).unwrap_or_default();
-                let depth = longest_path.len();
-                debug!("{pop}: {depth}");
-                Ok((pop, depth))
-            })
-            .collect::<Result<Vec<_>, Report>>()?;
-
-        // get the deepest (ie. most recent common ancestor)
-        let deepest_ancestor = depths
-            .into_iter()
-            .max_by(|a, b| a.1.cmp(&b.1))
-            .context("Failed to get common ancestor.")?;
-
-        // tuple (population name, depth)
-        let common_ancestor = deepest_ancestor.0;
-
-        Ok(common_ancestor)
-    }
-
-    /// Identify the most recent ancestor that is a recombinant.
-    pub fn get_recombinant_ancestor(&self, name: &str) -> Result<Option<&str>, Report> {
-        let mut recombinant = None;
-
-        let ancestor_paths = self.get_paths(name, "root", petgraph::Incoming)?;
-
-        for path in ancestor_paths {
-            for name in path {
-                if self.recombinants.contains(&name) {
-                    recombinant = Some(name);
-                    break;
-                }
-            }
-            if recombinant.is_some() {
-                break;
-            }
-        }
-
-        Ok(recombinant)
-    }
-
-    /// Get the node index of a named node.
-    pub fn get_node(&self, name: &str) -> Result<&NodeIndex, Report> {
-        self.graph
-            .node_references()
-            .into_iter()
-            .filter_map(|(i, n)| (n == name).then_some(i))
-            .next()
-            .ok_or(Err(eyre!("Name {name:?} is not in the phylogeny."))?)
-    }
-
-    /// Get the node name from a node index.
-    pub fn get_name(&self, node: &NodeIndex) -> Result<&str, Report> {
-        self.graph
-            .node_references()
-            .into_iter()
-            .filter_map(|(i, n)| (i == *node).then_some(n.as_str()))
-            .next()
-            .ok_or(Err(eyre!("Node {node:?} is not in the phylogeny."))?)
     }
 }
+
+// /// Phylogenetic methods for any data type that can be displayed.
+// impl<T> Phylogeny<T>
+// where
+//     T: Clone + Display + Eq + Hash + PartialEq,
+// {
+
+//     /// Create a phylogeny from a map of parent to children
+//     ///
+//     /// # Arguments
+//     ///
+//     /// data: Vector of (Parent, Child, Branch Length)
+//     pub fn create(data: Vec<(T, T, usize)>) -> Self {
+//         let mut phylogeny = Phylogeny::new();
+
+//         data.into_iter().for_each(|(parent, child, branch_length)| {
+//             // add parent to phylogeny
+//             let parent_node_index = match phylogeny.get_node_index(&parent) {
+//                 Ok(node_index) => *node_index,
+//                 Err(_) => phylogeny.graph.add_node(parent),
+//             };
+//             // add child to phylogeny
+//             let child_node_index = match phylogeny.get_node_index(&child) {
+//                 Ok(node_index) => *node_index,
+//                 Err(_) => phylogeny.graph.add_node(child),
+//             };
+//             // add edge bewteen parent to child
+//             phylogeny.graph.add_edge(parent_node_index, child_node_index, branch_length);
+//         });
+
+//         // set recombinants for quick lookup
+//         phylogeny.recombinants = phylogeny.get_recombinants(false).into_iter().cloned().collect();
+//         phylogeny.recombinants_with_descendants = phylogeny.get_recombinants(true).into_iter().cloned().collect();
+
+//         phylogeny
+//     }
+
+//     /// Return true if the phylogeny graph has no data.
+//     pub fn is_empty(&self) -> bool {
+//         self.graph.node_count() == 0
+//     }
+
+//     /// Return true if a node is a recombinant.
+//     ///
+//     /// Checks the number of incoming edges to a node, as recombinants
+//     /// will have more than 1 (ie. more than 1 parent).
+//     pub fn is_recombinant(&self, node: &T) -> Result<bool, Report> {
+//         let node_index = self.get_node_index(node)?;
+//         let neighbors = self.graph.neighbors_directed(*node_index, Direction::Incoming);
+//         let num_edges = neighbors.count();
+//         Ok(num_edges > 1)
+//     }
+
+//     /// Get all all paths from the node to the root.
+//     pub fn get_ancestors(&self, node: &T) -> Result<Vec<Vec<&T>>, Report> {
+//         let root = self.get_root_data()?;
+//         let mut paths = self.get_paths(node, root, petgraph::Incoming)?;
+
+//         // remove self name (first element) from paths, and then reverse order
+//         // so that it's ['root'.... name]
+//         paths.iter_mut().for_each(|p| {
+//             p.remove(0);
+//             p.reverse();
+//         });
+
+//         Ok(paths)
+//     }
+
+//     /// Get immediate children of node.
+//     pub fn get_children(&self, node: &T) -> Result<Vec<&T>, Report> {
+//         let node_index = self.get_node_index(&node)?;
+//         let neighbors = self.graph.neighbors_directed(*node_index, Direction::Outgoing);
+//         let mut children = neighbors.into_iter().map(|node_index| {
+//             let node_data = self.get_node_data(&node_index)?;
+//             Ok(node_data)
+//         }).collect::<Result<Vec<&T>, Report>>()?;
+
+//         // children order is last added to first added, reverse this
+//         children.reverse();
+
+//         Ok(children)
+//     }
+
+//     // Get all descendants of a node.
+//     //
+//     // Returns a big pile (single vector) of all descendants in all paths to tips.
+//     // Reminder, this function will also include the node itself.
+//     pub fn get_descendants(&self, node: &T, recombination: bool) -> Result<Vec<&T>, Report> {
+
+//         // Construct a depth-first-search (Dfs)
+//         let node_index = self.get_node_index(node)?;
+//         let mut dfs = Dfs::new(&self.graph, *node_index);
+
+//         let mut descendants = Vec::new();
+//         while let Some(node_index) = dfs.next(&self.graph) {
+//             // Get node name
+//             let node_data = self.get_node_data(&node_index)?;
+//             descendants.push(node_data);
+//         }
+
+//         // // if recombination is false, exclude descendants that are novel recombinants
+//         // if !recombination {
+//         //     let recombinant_ancestor = self.get_recombinant_ancestor(node).ok();
+//         //     descendants.retain(|node| recombinant_ancestor == )
+//         //     descendants = descendants
+//         //         .into_iter()
+//         //         .filter(|desc| recombinant_ancestor == self.get_recombinant_ancestor(desc).ok())
+//         //         .collect_vec();
+//         // }
+
+//         Ok(descendants)
+//     }
+
+//     /// Identify the most recent common ancestor(s) (MRCA) shared between all node names.
+//     pub fn get_mrca(&self, nodes: &[&T], recombination: bool) -> Result<Vec<&T>, Report> {
+
+//         Ok(nodes.to_vec())
+//         // // if only one node name was provided, just return it
+//         // if nodes.len() == 1 {
+//         //     return Ok(nodes.to_vec());
+//         // }
+
+//         // // mass pile of all ancestors of all named nodes
+//         // let root = self.get_root_data()?;
+//         // let ancestors = nodes
+//         //     .into_iter()
+//         //     .map(|node| {
+//         //         let paths = self.get_paths(node, root, Direction::Incoming)?;
+//         //         let ancestors = paths.into_iter().flatten().unique().collect_vec();
+//         //         Ok(ancestors)
+//         //     })
+//         //     .collect::<Result<Vec<_>, Report>>()?
+//         //     .into_iter()
+//         //     .flatten()
+//         //     .collect::<Vec<_>>();
+
+//         // // get ancestors shared by all input nodes
+//         // let common_ancestors = ancestors
+//         //     .into_iter()
+//         //     .unique()
+//         //     .filter(|anc| {
+//         //         let count = ancestors.iter().filter(|node| *node == anc).count();
+//         //         count == nodes.len()
+//         //     })
+//         //     .collect_vec();
+
+//         // // get the depths (distance to root) of the common ancestors
+//         // let depths = common_ancestors
+//         //     .into_iter()
+//         //     .map(|node| {
+//         //         let paths = self.get_paths(node, root, Direction::Incoming)?;
+//         //         let longest_path =
+//         //             paths.into_iter().max_by(|a, b| a.len().cmp(&b.len())).unwrap_or_default();
+//         //         let depth = longest_path.len();
+//         //         Ok((node, depth))
+//         //     })
+//         //     .collect::<Result<Vec<_>, Report>>()?;
+
+//         // // get the mrca(s) (ie. most recent common ancestor) deepest from root
+//         // // tuple (population name, depth)
+//         // let max_depth = depths.into_iter().map(|(pop, depth)| depth).max().unwrap_or(Err(eyre!("Failed to get mrca"))?);
+//         // let mrca = depths.into_iter().filter_map(|(pop, depth)| (depth == max_depth).then_some(pop)).collect();
+//         // Ok(mrca)
+//     }
+
+//     /// Get node data from node index
+//     pub fn get_node_data(&self, node_index: &NodeIndex) -> Result<&T, Report> {
+//         self.graph
+//             .node_references()
+//             .into_iter()
+//             .filter_map(|(i, n)| (i == *node_index).then_some(n))
+//             .next()
+//             .ok_or(Err(eyre!("Node index {node_index:?} is not in the phylogeny."))?)
+//     }
+
+//     /// Get node index from node data.
+//     pub fn get_node_index(&self, node: &T) -> Result<&NodeIndex, Report> {
+//         self.graph
+//             .node_references()
+//             .into_iter()
+//             .filter_map(|(i, n)| (n == node).then_some(&i))
+//             .next()
+//             .ok_or(Err(eyre!("Node {node} is not in the phylogeny."))?)
+//     }
+
+//     /// Get all node data.
+//     pub fn get_nodes(&self) -> Vec<&T> {
+//         self.graph.node_references().map(|(_, n)| n).collect()
+//     }
+
+//     /// Get non-recombinants node data.
+//     ///
+//     /// descendants: true if recombinant descendants should be excluded
+//     pub fn get_non_recombinants(&self, descendants: bool) -> Vec<&T> {
+//         let recombinants = self.get_recombinants(descendants);
+//         self.get_nodes().into_iter().filter(|n| !self.recombinants.contains(n)).collect()
+//     }
+
+//     /// Get problematic recombinants, where the parents are not sister taxa.
+//     /// They might be parent-child instead.
+//     // pub fn get_problematic_recombinants(&self) -> Result<Vec<&T>, Report> {
+//     //     let mut problematic_recombinants = Vec::new();
+//     //     let recombination = true;
+
+//     //     for recombinant in &self.recombinants {
+//     //         let parents = self.get_parents(recombinant)?;
+//     //         for i1 in 0..parents.len() - 1 {
+//     //             let p1 = &parents[i1];
+//     //             for p2 in parents.iter().skip(i1 + 1) {
+//     //                 let mut descendants = self.get_descendants(p2, recombination)?;
+//     //                 let ancestors =
+//     //                     self.get_ancestors(p2)?.to_vec().into_iter().flatten().collect_vec();
+//     //                 descendants.extend(ancestors);
+
+//     //                 if descendants.contains(p1) {
+//     //                     problematic_recombinants.push(recombinant.clone());
+//     //                     break;
+//     //                 }
+//     //             }
+//     //         }
+//     //     }
+
+//     //     Ok(problematic_recombinants)
+//     // }
+
+//     /// Get recombinants node data.
+//     ///
+//     /// descendants: true if recombinant descendants should be included
+//     pub fn get_recombinants(&self, descendants: bool) -> Vec<&T> {
+//         // construct iterator over node data
+//         let nodes = self.get_nodes().into_iter();
+
+//         match descendants {
+//             // include all descendants of recombinant nodes
+//             true => nodes.filter(|n| self.get_recombinant_ancestor(n).is_ok()).collect(),
+//             // include only the primary recombinant nodes
+//             false => nodes.filter(|n| self.is_recombinant(n).unwrap_or(false)).collect(),
+//         }
+//     }
+
+//     /// Identify the most recent ancestor that is a recombinant.
+//     pub fn get_recombinant_ancestor(&self, node: &T) -> Result<Option<&T>, Report> {
+//         let mut recombinant = None;
+
+//         let root = self.get_root_data()?;
+//         let ancestor_paths = self.get_paths(node, root, petgraph::Incoming)?;
+
+//         for path in ancestor_paths {
+//             for node in path {
+//                 if self.recombinants.contains(&node) {
+//                     recombinant = Some(node);
+//                     break;
+//                 }
+//             }
+//             if recombinant.is_some() {
+//                 break;
+//             }
+//         }
+
+//         Ok(recombinant)
+//     }
+
+//     /// Get root node index
+//     pub fn get_root_index(&self) -> &NodeIndex {
+//        &self.graph.node_indices().next().unwrap_or_default()
+//     }
+
+//     pub fn get_root_data(&self) -> Result<&T, Report> {
+//         let node_index = self.graph.node_indices().next().unwrap_or_default();
+//         let node_data = self.get_node_data(&node_index)?;
+//         Ok(node_data)
+//     }
+
+//     /// Get immediate parents of a node.
+//     pub fn get_parents(&self, node: &T) -> Result<Vec<&T>, Report> {
+//         let node_index = self.get_node_index(node)?;
+//         let mut neighbors = self.graph.neighbors_directed(*node_index, Direction::Incoming);
+//         let parents = neighbors.into_iter().map(|node_index| {
+//             let node_data = self.get_node_data(&node_index)?;
+//             Ok(node_data)
+//         }).collect::<Result<Vec<&T>, Report>>()?;
+
+//         Ok(parents)
+//     }
+
+//     /// Get all paths from the origin node to the destination node, always traveling
+//     /// in the specified direction (Incoming towards root, Outgoing towards tips)
+//     pub fn get_paths(
+//         &self,
+//         origin: &T,
+//         dest: &T,
+//         direction: petgraph::Direction,
+//     ) -> Result<Vec<Vec<&T>>, Report> {
+//         // container to hold the paths we've found, is a vector of vectors
+//         // because there might be recombinants with multiple paths
+//         let mut paths = Vec::new();
+
+//         // check that the origin and dest actually exist in the graph
+//         let origin_node_index = self.get_node_index(origin)?;
+//         let dest_node_index = self.get_node_index(dest)?;
+
+//         // Check if we've reached the destination
+//         if origin == dest {
+//             paths.push(vec![origin]);
+//         }
+//         // Otherwise, continue the search!
+//         else {
+//             let mut neighbors = self.graph.neighbors_directed(*origin_node_index, direction);
+//             neighbors.into_iter().try_for_each(|node_index| {
+//                 let parent_node_data = self.get_node_data(&node_index)?;
+
+//                 // recursively get path of each parent to the destination
+//                 let mut parent_paths = self.get_paths(&parent_node_data, dest, direction)?;
+
+//                 // prepend the origin to the paths
+//                 parent_paths.iter_mut().for_each(|p| {
+//                     p.insert(0, origin);
+//                     paths.push(*p);
+//                 });
+
+//                 Ok::<(), Report>(())
+//             })?;
+//         }
+
+//         Ok(paths)
+//     }
+
+//     /// Remove a node in the graph.
+//     ///
+//     /// If prune is true, removes entire clade from graph.
+//     /// If prune is false, connects parents to children to fill the hole.
+//     pub fn remove(&mut self, node: &T, prune: bool) -> Result<Vec<T>, Report> {
+
+//         let mut removed_nodes = Vec::new();
+
+//         // pruning a clade is simple removal of all descendants
+//         if prune {
+//             let mut descendants = self.get_descendants(node, true)?.into_iter().cloned().collect_vec();
+
+//             // prune the clade
+//             descendants.into_iter().try_for_each(|node_data| {
+//                 let node_index = self.get_node_index(&node_data)?;
+//                 self.graph.remove_node(*node_index);
+//                 Ok::<(), Report>(())
+//             })?;
+
+//             // Update the recombinants attributes
+//             self.recombinants.retain(|n| !descendants.contains(&n));
+//             self.recombinants_with_descendants.retain(|n| !descendants.contains(&n));
+
+//             // update return value
+//             removed_nodes.append(&mut descendants);
+//         }
+//         // removing a single node is tricky if it's not a tip
+//         // the hole needs to be filled in between
+//         else {
+//             // get some attributes before we remove it
+//             let parents = self.get_parents(node)?;
+//             let mut children = self.get_children(node)?.into_iter().cloned().collect_vec();
+//             let is_recombinant = self.is_recombinant(node)?;
+
+//             // Delete the node
+//             let node_index = self.get_node_index(node)?;
+//             // todo!() branch length
+//             let branch_length = 1;
+//             //let branch_length = self.graph.node_weight(node_index)?;
+//             debug!("Deleting node {node}");
+//             self.graph.remove_node(*node_index);
+
+//             // If it was an interior node, connect parents and children
+//             children.into_iter().try_for_each(|child| {
+//                 let child_node_index = self.get_node_index(&child)?;
+//                 parents.iter().try_for_each(|parent| {
+//                     debug!("Connecting child {child} to new parent: {parent}");
+//                     let parent_node_index = self.get_node_index(parent)?;
+//                     // todo!() Branch length!
+//                     self.graph.add_edge(*parent_node_index, *child_node_index, branch_length);
+//                     Ok::<(), Report>(())
+//                 })?;
+//                 Ok::<(), Report>(())
+//             })?;
+
+//             // If it was a primary recombinant node, make all children primary recombinants
+//             if is_recombinant {
+//                 self.recombinants.append(&mut children);
+//             }
+
+//             // Update the recombinants attributes
+//             self.recombinants.retain(|n| n != node);
+//             self.recombinants_with_descendants.retain(|n| n != node);
+
+//             // Update return value
+//             removed_nodes.push(*node);
+//         }
+
+//         Ok(removed_nodes)
+//     }
+// }
+
+// /// Phylogenetic methods for data types that can be serialized.
+// impl<'a, T> Phylogeny<T>
+// where
+//     T: Clone + Deserialize<'a> + Display + Eq + Hash + PartialEq + Serialize,
+// {
+//     /// Read phylogeny from file.
+//     pub fn read(path: &Path) -> Result<Phylogeny<T>, Report> {
+//         let phylogeny = std::fs::read_to_string(path)
+//             .wrap_err_with(|| format!("Failed to read file: {path:?}."))?;
+//         let mut phylogeny: Phylogeny<T> = serde_json::from_str(&phylogeny)
+//             .wrap_err_with(|| format!("Failed to parse file: {path:?}."))?;
+
+//         // Add recombinants as quick lookup values
+//         let rec = phylogeny.get_recombinants(false).into_iter().cloned().collect();
+//         let non_rec = phylogeny.get_recombinants(true).into_iter().cloned().collect();
+
+//         phylogeny.recombinants = rec;
+//         phylogeny.recombinants_with_descendants = non_rec;
+
+//         Ok(phylogeny)
+//     }
+
+//     /// Write phylogeny to file.
+//     pub fn write(&self, path: &Path) -> Result<(), Report> {
+//         // Create output file
+//         let mut file = File::create(path)?;
+//         // Check format based on extension
+//         //let ext = utils::path_to_ext(Path::new(path))?;
+//         // todo!() Ext restore
+//         let ext = "json".to_string();
+
+//         // format conversion
+//         let output = match ext.as_str() {
+//             // ----------------------------------------------------------------
+//             // DOT file for graphviz
+//             "dot" => {
+//                 let mut output =
+//                     format!("{}", Dot::with_config(&self.graph, &[Config::EdgeNoLabel]));
+//                 // set graph id (for cytoscape)
+//                 output = str::replace(&output, "digraph", "digraph G");
+//                 // set horizontal (Left to Right) format for tree-like visualizer
+//                 output = str::replace(&output, "digraph {", "digraph {\n    rankdir=\"LR\";");
+//                 output
+//             }
+//             // ----------------------------------------------------------------
+//             // JSON for rebar
+//             "json" => serde_json::to_string_pretty(&self)
+//                 .unwrap_or_else(|_| panic!("Failed to parse phylogeny.")),
+//             _ => {
+//                 return Err(
+//                     eyre!("Phylogeny write for extension .{ext} is not supported.")
+//                         .suggestion("Please try .json or .dot instead."),
+//                 )
+//             }
+//         };
+
+//         // Write to file
+//         file.write_all(output.as_bytes())
+//             .unwrap_or_else(|_| panic!("Failed to write file: {:?}.", path));
+
+//         Ok(())
+//     }
+// }

@@ -1,4 +1,4 @@
-use crate::cli::run;
+use crate::run;
 use color_eyre::eyre::{Report, Result};
 
 /// Create default Toy1 recombinant edge cases.
