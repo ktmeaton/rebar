@@ -62,11 +62,11 @@ use structdoc::StructDoc;
 #[clap(trailing_var_arg = true)]
 pub struct Cli {
     #[clap(subcommand)]
-    /// Pass CLI arguments to a particular [Command](Command).
+    /// Pass CLI arguments to a particular [Command].
     #[clap(help = "Set the command.")]
     pub command: Command,
 
-    /// Set the output [Verbosity](Verbosity) level.
+    /// Set the output [Verbosity] level.
     #[clap(short = 'v', long)]
     #[clap(value_enum, default_value_t = Verbosity::default())]
     #[clap(hide_possible_values = false)]

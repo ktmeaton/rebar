@@ -12,10 +12,10 @@ use serde::{Deserialize, Serialize};
 // ----------------------------------------------------------------------------
 // Dataset
 
-/// A collection of named sequences aligned to a reference.
+/// A collection of parent population sequences aligned to a reference.
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct Dataset {
-    /// Dataset metadata summary
+    /// Summary of dataset attributes.
     pub summary: attributes::Summary,
     // /// Reference sequence record, with sequence bases kept
     // pub reference: sequence::Record,

@@ -1,3 +1,5 @@
+//! Attributes are Dataset metadata which uniquely identify a dataset (ex. [Name], [Tag]) and faciliate reproducibility (ex. [Summary]).
+
 use crate::utils::remote_file::RemoteFile;
 use chrono::prelude::*;
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};
@@ -12,7 +14,7 @@ use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
 use structdoc::StructDoc;
-use strum::{EnumIter, EnumProperty};
+use strum::EnumIter;
 
 // ----------------------------------------------------------------------------
 // Dataset Name
@@ -20,42 +22,41 @@ use strum::{EnumIter, EnumProperty};
 /// The name of a dataset.
 ///
 /// Might represent a particular organism (ex. sars-cov-2) or simulated data for testing (toy1).
-///
-/// # Examples
-///
-/// ```
-/// use rebar::dataset::Name;
-/// ```
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    Deserialize,
-    EnumIter,
-    EnumProperty,
-    PartialEq,
-    Serialize,
-    StructDoc,
-)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, EnumIter, PartialEq, Serialize, StructDoc)]
 pub enum Name {
-    /// Severe Acute Respiratory Syndrome Coronavirus 2
+    /// Severe Acute Respiratory Syndrome Coronavirus 2 (SARS-CoV-2)
+    ///
+    /// ```
+    /// let name = rebar::dataset::Name::SarsCov2;
+    /// ```
     #[serde(rename = "sars-cov-2")]
-    #[strum(props(implemented = "true"))]
     SarsCov2,
-    /// Test dataset 1
+    /// Toy dataset 1 for testing.
+    /// ```
+    /// let name = rebar::dataset::Name::Toy1;
+    /// ```
     #[serde(rename = "toy1")]
-    #[strum(props(implemented = "true"))]
     Toy1,
     /// Custom dataset
+    /// ```
+    /// let name = rebar::dataset::Name::Custom;
+    /// ```
     #[default]
     #[serde(rename = "custom")]
-    #[strum(props(implemented = "false"))]
     Custom,
 }
 
 impl Name {
-    /// Get the compatibility for a named dataset.
+    /// Returns the [Compatibility] of a named dataset.
+    ///
+    /// ```
+    /// use rebar::dataset::Name;
+    ///
+    /// Name::SarsCov2.get_compatibility()?;
+    /// Name::Toy1.get_compatibility()?;
+    /// Name::Custom.get_compatibility()?;
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
     pub fn get_compatibility(&self) -> Result<Compatibility, Report> {
         let mut compatibility = Compatibility::new();
         #[allow(clippy::single_match)]
@@ -86,6 +87,16 @@ impl FromStr for Name {
     type Err = Report;
 
     /// Convert a string to a dataset Name.
+    ///
+    /// ```rust
+    /// use rebar::dataset::Name;
+    /// use std::str::FromStr;
+    ///
+    /// assert_eq!(Name::SarsCov2, Name::from_str("sars-cov-2")?);
+    /// assert_eq!(Name::Toy1,     Name::from_str("toy1")?);
+    /// assert_eq!(Name::Custom,   Name::from_str("custom")?);
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
     fn from_str(name: &str) -> Result<Self, Report> {
         let name = match name {
             "sars-cov-2" => Name::SarsCov2,
@@ -107,13 +118,26 @@ impl FromStr for Name {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, StructDoc)]
 pub enum Tag {
     /// For datasets where the source files were downloaded from the latest possible available.
+    ///
+    /// ```rust
+    /// let tag = rebar::Dataset::Tag::Nightly;
+    /// ```
     Nightly,
     /// For datasets that have at least one file that is version-controlled or date-controlled.
     /// For example, source files downloaded from GitHub repositories.
     ///
     /// The String is a date in the format "yyyy-mm-dd", such as "2024-01-01".
+    ///
+    /// ```rust
+    /// let date = "2024-01-01".to_string();
+    /// let tag = rebar::Dataset::Tag::Archive(date);
+    /// ```
     Archive(String),
     /// For all other datasets, that are created custom with no option to date-control.
+    ///
+    /// ```rust
+    /// let tag = rebar::Dataset::Tag::Custom;;
+    /// ```
     #[default]
     Custom,
 }
@@ -159,9 +183,7 @@ impl FromStr for Tag {
 // ----------------------------------------------------------------------------
 // Dataset Compatibility
 
-/// Return true if dataset name and tag are compatible.
-///
-/// # Examples
+/// Return true if dataset name and tag are compatible with each other, and the CLI version.
 ///
 /// ```
 /// use rebar::dataset::attributes::{is_compatible, Name, Tag};
@@ -225,8 +247,6 @@ pub fn is_compatible(name: &Name, tag: &Tag) -> Result<bool, Report> {
 
 /// A summary of a dataset's compatibility with a CLI version and date.
 ///
-/// # Examples
-///
 /// ```
 /// use rebar::dataset::attributes::Compatibility;
 /// use chrono::NaiveDate;
@@ -255,7 +275,6 @@ impl Default for Compatibility {
 
 impl Compatibility {
     /// Create new Compatibility with no date or CLI constraints.
-    /// # Examples
     ///
     /// ```
     /// use rebar::dataset::attributes::Compatibility;
@@ -276,21 +295,27 @@ impl Compatibility {
 // Dataset Summary
 
 /// A summary of a dataset's attributes and source files.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+///
+/// ```rust
+/// use rebar::dataset::{Name, Tag, Summary};
+///
+/// let summary = Summary { name: Name::SarsCov2, tag:  Tag::Nightly, .. Default::default()};
+/// ```
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, StructDoc)]
 pub struct Summary {
-    /// CLI version used to create the dataset.
-    pub version: String,
-    /// Dataset version tag.
-    pub tag: Tag,
-    /// Dataset name.
+    /// Dataset [Name].
     pub name: Name,
-    /// URL of the reference genome file.
+    /// CLI semantic version used to create the dataset (ex. "0.3.0").
+    pub version: String,
+    /// Dataset version [Tag].
+    pub tag: Tag,
+    /// Optional URL of the reference genome file.
     pub reference: Option<RemoteFile>,
-    /// URL of the population alignment file.
+    /// Optional URL of the population alignment file.
     pub populations: Option<RemoteFile>,
     /// Additional files that are dataset-specific.
     ///
-    /// For example, the sars-cov-2 alias key that maps aliases to lineage names.
+    /// For example, in the [SARS-CoV-2](Name::SarsCov2) dataset, the [alias key](https://github.com/cov-lineages/pango-designation/blob/master/pango_designation/alias_key.json) maps aliases to lineage names.
     pub misc: BTreeMap<String, Option<RemoteFile>>,
 }
 
@@ -301,6 +326,10 @@ impl Default for Summary {
 }
 impl Summary {
     /// Create a new dataset summary.
+    ///
+    /// ```rust
+    /// let summary = rebar::dataset::Summary::new();
+    /// ```
     pub fn new() -> Self {
         Summary {
             version: format!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
@@ -312,6 +341,17 @@ impl Summary {
         }
     }
     /// Read dataset summary from JSON file.
+    ///
+    /// ```rust
+    /// use rebar::dataset::Summary;
+    ///
+    /// let summary = Summary::new();
+    /// let file    = tempfile::NamedTempFile::new()?;
+    /// summary.write(file.path())?;
+    ///
+    /// Summary::read(file.path())?;
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
     pub fn read(path: &Path) -> Result<Summary, Report> {
         let summary = std::fs::read_to_string(path)
             .wrap_err_with(|| format!("Failed to read file: {path:?}."))?;
@@ -322,6 +362,14 @@ impl Summary {
     }
 
     /// Write dataset summary to JSON file.
+    ///
+    /// ```rust
+    /// let summary = rebar::dataset::Summary::new();
+    /// let file    = tempfile::NamedTempFile::new()?;
+    ///
+    /// summary.write(file.path())?;
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
     pub fn write(&self, path: &Path) -> Result<(), Report> {
         // create output file
         let mut file =

@@ -4,7 +4,7 @@ use clap::Parser;
 use color_eyre::eyre::{Report, Result};
 use serde::{Deserialize, Serialize};
 use structdoc::StructDoc;
-use strum::{EnumProperty, IntoEnumIterator};
+use strum::IntoEnumIterator;
 
 // ----------------------------------------------------------------------------
 // Structs
@@ -52,11 +52,6 @@ pub fn list(args: &Args) -> Result<Table<String>, Report> {
             if &name != args_name {
                 continue;
             }
-        }
-
-        // check if this datset name is actually implemented currently
-        if name.get_str("implemented").unwrap_or("false") != "true" {
-            continue;
         }
 
         // Extract compatibility attributes

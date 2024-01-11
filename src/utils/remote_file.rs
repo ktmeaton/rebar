@@ -2,13 +2,16 @@ use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::path::PathBuf;
+use structdoc::StructDoc;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, StructDoc)]
 pub struct RemoteFile {
     pub url: String,
     pub sha: String,
     pub local_path: PathBuf,
+    #[structdoc(skip)]
     pub date_created: DateTime<Utc>,
+    #[structdoc(skip)]
     pub date_downloaded: DateTime<Utc>,
 }
 
