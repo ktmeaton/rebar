@@ -1,3 +1,5 @@
+//! Run recombination detection algorithm on input sequences and populations.
+
 use clap::{Args as ClapArgs, Parser};
 use color_eyre::eyre::{Report, Result, WrapErr};
 use either::*;

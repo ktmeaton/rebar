@@ -1,10 +1,15 @@
+//! Downloading, loading, and manipulating of the [Dataset].
+
 pub mod attributes;
 pub mod download;
 pub mod list;
 pub mod toy1;
 
+#[doc(inline)]
 pub use crate::dataset::attributes::{Compatibility, Name, Summary, Tag};
+#[doc(inline)]
 pub use crate::dataset::download::download;
+#[doc(inline)]
 pub use crate::dataset::list::list;
 
 use serde::{Deserialize, Serialize};

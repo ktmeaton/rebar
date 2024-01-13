@@ -1,3 +1,5 @@
+//! Download an available dataset.
+
 use crate::dataset::attributes::{is_compatible, Name, Summary, Tag};
 // use crate::dataset::{sarscov2, toy1, Dataset};
 use crate::dataset::{toy1, Dataset};
@@ -23,7 +25,7 @@ pub struct Args {
 
     /// Dataset tag.
     ///
-    /// A date (YYYY-MM-DD), or 'nightly', or 'custom'
+    /// A date (YYYY-MM-DD), 'nightly', or 'custom'
     #[clap(short = 't', long, required = true)]
     pub tag: Tag,
 
@@ -33,8 +35,9 @@ pub struct Args {
     #[clap(short = 'o', long, required = true)]
     pub output_dir: PathBuf,
 
-    /// Download dataset from a summary.json snapshot.
+    /// Download dataset from a [Summary] JSON [snapshot].
     #[clap(short = 's', long)]
+    #[clap(help = "Download dataset from a Summary JSON.")]
     pub summary: Option<PathBuf>,
 }
 
@@ -114,7 +117,7 @@ pub async fn download(args: &Args) -> Result<Dataset, Report> {
     } else {
         match args.name {
             //Name::SarsCov2 => sarscov2::download::reference(&args.tag, &output_path).await?,
-            Name::Toy1 => toy1::create::reference(&args.tag, &output_path).ok(),
+            Name::Toy1 => toy1::download::reference(&args.tag, &output_path).ok(),
             _ => todo!(),
         }
     };

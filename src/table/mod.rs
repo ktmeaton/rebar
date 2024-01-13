@@ -1,8 +1,9 @@
-//! Table operations.
+//! Create and manipulate the [Table].
 
 use crate::utils;
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use std::cmp::PartialEq;
 use std::default::Default;
 use std::fs::File;
@@ -28,7 +29,7 @@ use structdoc::StructDoc;
 /// |---|---|---|
 /// | A | B | C |
 ///
-#[derive(Debug, PartialEq, StructDoc)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, StructDoc)]
 pub struct Table<T> {
     /// Names of the table columns.
     pub headers: Vec<T>,
@@ -44,7 +45,19 @@ impl<T> Default for Table<T> {
     }
 }
 
-/// Methods for any type of table data.
+impl<'t, T> std::fmt::Display for Table<T>
+where
+    T: Deserialize<'t> + Serialize,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            serde_json::to_string(self).expect("Failed to serialize table.")
+        )
+    }
+}
+
 impl<T> Table<T> {
     /// Create a new table with empty headers and rows.
     pub fn new() -> Self {
@@ -349,10 +362,10 @@ where
     /// table.add_row(vec!["D", "E", "F"]);
     ///
     /// let mut file = NamedTempFile::new().unwrap();
-    /// table.write(file.path(), Some('\t'));
+    /// table::write(table, file.path(), Some('\t'));
     /// ```
     ///
-    pub fn write(&self, path: &Path, delim: Option<char>) -> Result<(), Report> {
+    pub fn write(table: &Table<T>, path: &Path, delim: Option<char>) -> Result<(), Report> {
         let mut file =
             File::create(path).wrap_err_with(|| format!("Unable to create file: {path:?}"))?;
 
@@ -363,12 +376,15 @@ where
         };
 
         // write headers
-        let line = format!("{}\n", self.headers.iter().join(delim.to_string().as_str()));
+        let line = format!(
+            "{}\n",
+            table.headers.iter().join(delim.to_string().as_str())
+        );
         file.write_all(line.as_bytes())
             .wrap_err_with(|| format!("Unable to write table headers: {line}"))?;
 
         // write regular rows
-        for row in &self.rows {
+        for row in &table.rows {
             let line = format!("{}\n", row.iter().join(delim.to_string().as_str()));
             file.write_all(line.as_bytes())
                 .wrap_err_with(|| format!("Unable to write table rows: {line}"))?;

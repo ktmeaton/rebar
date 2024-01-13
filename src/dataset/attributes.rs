@@ -1,4 +1,4 @@
-//! Attributes are Dataset metadata which uniquely identify a dataset (ex. [Name], [Tag]) and faciliate reproducibility (ex. [Summary]).
+//! Metadata to uniquely identify a dataset ([Name], [Tag]) and faciliate reproducibility ([Summary]).
 
 use crate::utils::remote_file::RemoteFile;
 use chrono::prelude::*;

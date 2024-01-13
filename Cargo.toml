@@ -4,6 +4,7 @@ version = "0.3.0"
 edition = "2021"
 
 [dependencies]
+aquamarine = { version = "0.5.0", default-features = false}
 chrono          = { version = "0.4.31",  default-features = false, features = ["clock", "serde"] }
 clap            = { version = "4.2.7",   default-features = true,  features = ["derive", "string"] }
 color-eyre      = { version = "0.6.2",   default-features = false }
@@ -15,11 +16,12 @@ indicatif       = { version = "0.17.5",  default-features = false, features = ["
 indoc           = { version = "2.0.4",   default-features = false }
 itertools       = { version = "0.12.0",  default-features = false, features = ["use_std"] }
 log             = { version = "0.4.17",  default-features = false }
-noodles         = { version = "0.59.0", default-features = false, features = ["core", "fasta"]}
+noodles         = { version = "0.59.0",  default-features = false, features = ["core", "fasta"]}
+num-traits      = { version = "0.2.17",  default-features = false }
 openssl         = { version = "0.10.60", default-features = false, features = ["vendored"]}
 petgraph        = { version = "0.6.3",   default-features = false, features = ["serde-1"] }
 raqote          = { version = "0.8.2",   default-features = false, features = ["png"]}
-rand            = { version = "0.8.5", default-features = false, features = ["std", "std_rng"] }
+rand            = { version = "0.8.5",   default-features = false, features = ["std", "std_rng"] }
 rayon           = { version = "1.7.0",   default-features = false }
 reqwest         = { version = "0.11.18", default-features = true,  features = ["json"] }
 rustix          = { version = "0.38.25", default-features = false }
@@ -33,7 +35,7 @@ tempfile        = { version = "3.8.1",   default-features = false }
 tokio           = { version = "1.28.1",  default-features = false, features = ["macros", "rt-multi-thread"] }
 zstd            = { version = "0.13.0",  default-features = false }
 
-# [dev-dependencies]
+[dev-dependencies]
 # cargo-llvm-cov    = { version = "0.6.0", default-features = false }
 # flamegraph        = { version = "0.6.4", default-features = false }
 # pretty_assertions = { version = "1.4.0", default-features = false }

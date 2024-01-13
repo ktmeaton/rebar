@@ -6,6 +6,8 @@ use rebar::{cli, Cli};
 
 #[tokio::main]
 async fn main() -> Result<(), Report> {
+    let mut phylo = rebar::dataset::toy1::phylogeny::get()?;
+    println!("{}", phylo.to_mermaid()?);
     // ------------------------------------------------------------------------
     // CLI Setup
 

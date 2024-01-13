@@ -1,3 +1,5 @@
+//! List available datasets for download.
+
 use crate::dataset::attributes::Name;
 use crate::Table;
 use clap::Parser;
@@ -32,7 +34,7 @@ impl Args {
 // ----------------------------------------------------------------------------
 // Functions
 
-/// List datasets
+/// List datasets available for download.
 pub fn list(args: &Args) -> Result<Table<String>, Report> {
     // table of name, tag, cli_version
     let mut table = Table::new();

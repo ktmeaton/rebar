@@ -1,3 +1,5 @@
+//! Command-line interface (CLI) for Dataset [Commands](Command).
+
 use crate::dataset::{download, list};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
@@ -16,14 +18,12 @@ pub struct Args {
 #[derive(Debug, Deserialize, Serialize, StructDoc, Subcommand)]
 pub enum Command {
     /// Pass CLI arguments to the dataset [list](crate::dataset::list()) method.
-    ///
+    /// <br>
     /// ```rust
     /// use rebar::cli::dataset::Command;
     /// use rebar::dataset::{download, list};
-    ///
     /// let args    = list::Args::default();
-    /// let command = Command::List(args);
-    ///
+    /// let command = Command::List( list::Args::default() );
     /// match command {
     ///   Command::List(args)     => _ = list(&args),
     ///   Command::Download(args) => _ = download(&args),
@@ -34,14 +34,12 @@ pub enum Command {
     List(list::Args),
 
     /// Pass CLI arguments to the dataset [download](crate::dataset::download()) method.
-    ///
+    /// <br>
     /// ```rust
     /// use rebar::cli::dataset::Command;
     /// use rebar::dataset::{download, list};
-    ///
     /// let args    = download::Args::default();
     /// let command = Command::Download(args);
-    ///
     /// match command {
     ///   Command::List(args)     => _ = list(&args),
     ///   Command::Download(args) => _ = download(&args),
@@ -49,5 +47,6 @@ pub enum Command {
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     #[clap(about = "Download dataset.")]
+    #[clap(arg_required_else_help = true)]
     Download(download::Args),
 }

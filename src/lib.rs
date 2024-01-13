@@ -31,7 +31,7 @@
 
 pub mod cli;
 pub mod dataset;
-pub mod phylogeny;
+mod phylogeny;
 pub mod run;
 pub mod table;
 mod utils;
@@ -41,6 +41,8 @@ mod utils;
 pub use crate::cli::Cli;
 #[doc(inline)]
 pub use crate::dataset::Dataset;
+#[doc(inline)]
+pub use crate::phylogeny::Phylogeny;
 #[doc(inline)]
 pub use table::Table;
 #[doc(inline)]
