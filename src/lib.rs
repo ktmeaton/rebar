@@ -31,7 +31,7 @@
 
 pub mod cli;
 pub mod dataset;
-mod phylogeny;
+pub mod phylogeny;
 pub mod run;
 pub mod table;
 mod utils;

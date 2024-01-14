@@ -6,7 +6,12 @@ use rebar::{cli, Cli};
 
 #[tokio::main]
 async fn main() -> Result<(), Report> {
-    let mut phylo = rebar::dataset::toy1::phylogeny::get()?;
+    use rebar::{phylogeny::Branch, phylogeny::Node, Phylogeny};
+    let node_1 = Node { label: "A" };
+    let node_2 = Node { label: "B" };
+    let branch = Branch { length: 1.0 };
+    let mut phylo = rebar::Phylogeny::new();
+    phylo.add_edge(node_1, node_2, branch);
     println!("{}", phylo.to_mermaid()?);
     // ------------------------------------------------------------------------
     // CLI Setup

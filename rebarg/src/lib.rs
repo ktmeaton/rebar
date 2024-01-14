@@ -1,4 +1,4 @@
-//! Creation and manipulation of the [Phylogeny], as an ancestral recombination graph (ARG).
+//! A library for ancestral recombination graphs (ARG).
 
 use color_eyre::eyre::{eyre, Report, Result};
 use itertools::Itertools;
@@ -10,29 +10,27 @@ use petgraph::visit::{Dfs, EdgeRef, IntoNodeReferences};
 use petgraph::Direction;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+#[cfg(feature = "dev")]
 use structdoc::StructDoc;
 
 // ----------------------------------------------------------------------------
 // Phylogeny
 
-/// Phylogenetic representation of a dataset's population history as an ancestral recombination graph (ARG).
+/// # Introduction
 ///
-/// - The nodes (`N`) can be a wide variety of types (ex. [`&str`](core::primitive::str), [`String`](std::string::String), [`Table`](crate::Table), [`usize`](core::primitive::str), etc.).
-/// - The branches (`B`) must be a type that can be cast into an [`f32`](std::primitive::f32) float for the length.
+/// A phylogeny as an ancestral recombination graph (ARG).
+///
+/// - The nodes (`N`) can be a wide variety of types (ex. [`str`], [`String`], [`usize`](core::primitive::str), [`Node`], etc.).
+/// - The branches (`B`) must be a type that can be cast into an [`f32`] for the length.
 /// - See the [Implementation](#impl-Phylogeny<N,+B>) section for the allowed types based on traits.
 /// - See the [`Node`] and [`Branch`] structs for examples of complex data types.
-///
-/// ## [Toy1](crate::dataset::toy1)
-///
-/// The following is a [Mermaid](Phylogeny::to_mermaid) diagram representation of the [Toy1](crate::dataset::toy1) dataset, generated with the [`to_mermaid`](Phylogeny::to_mermaid) function. This diagram will be referenced throughout the documentation examples:
-///
-#[cfg_attr(doc, aquamarine::aquamarine)]
+#[cfg_attr(feature = "doc", aquamarine::aquamarine)]
 /// ```mermaid
 /// graph TD;
 ///
 ///   subgraph Legend
 ///     direction LR;
-///     D1[ ] -..->|Non-Recombination| D2[ ];
+///     D1[ ] --->|Non-Recombination| D2[ ];
 ///     style D1 height:0px;
 ///     style D2 height:0px;
 ///     D3[ ] -..->|Recombination| R1[ ];
@@ -60,12 +58,13 @@ use structdoc::StructDoc;
 /// linkStyle 1,4,5,7,10,11 stroke:#ff7f0e
 /// linkStyle 0,2,3,6,8,9 stroke:#1f77b4
 /// ```
-#[derive(Clone, Debug, Deserialize, Serialize, StructDoc)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "dev", derive(StructDoc))]
 pub struct Phylogeny<N, B> {
     /// Ancestral recombination graph (ARG) of populations as a directed graph of parents and children.
     ///
     /// `N` are population nodes and `B` are branches.
-    #[structdoc(skip)]
+    #[cfg_attr(feature = "dev", structdoc(skip))]
     pub graph: Graph<N, B>,
     // /// Recombinants with multiple parents.
     // pub recombinants: Vec<N>,
@@ -78,52 +77,62 @@ where
     N: Clone + std::fmt::Debug + std::fmt::Display + Eq + std::hash::Hash + PartialEq,
     B: std::fmt::Debug + std::fmt::Display + AsPrimitive<f32>,
 {
-    /// Create a new empty [Phylogeny] with nodes (`N`) and branches (`B`).
+    /// Returns a new empty [Phylogeny] with nodes (`N`) and branches (`B`).
     ///
-    #[cfg_attr(doc, aquamarine::aquamarine)]
     /// # Examples
+    #[cfg_attr(feature = "doc", aquamarine::aquamarine)]
+    ///
+    /// Manually specify the type at creation, with [`str`] nodes (`N`) and [`u32`] branches (`B`).
+    ///
+    /// ```rust
+    /// use rebarg::Phylogeny;
+    /// let mut phylo: Phylogeny<&str, u32> = Phylogeny::new();
+    /// phylo.add_branch("N1", "N2", 1234)?;
+    /// # assert_eq!(phylo.get_nodes()?, vec!["N1", "N2"].iter().collect::<Vec<_>>());
+    /// # assert_eq!(phylo.get_branches(), vec![1234].iter().collect::<Vec<_>>());
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
+    ///
+    /// ```mermaid
+    /// graph LR;
+    ///   N1-->|1234|N2:::default;
+    ///    
+    /// classDef default stroke:#1f77b4
+    /// linkStyle default stroke:#1f77b4
+    /// ```
     ///
     /// Let the compiler figure out the type based on subsequent commands.
     ///
     /// ```rust
-    /// let mut phylo = rebar::Phylogeny::new();
-    /// phylo.add_edge("A", "B", 10)?;
-    /// phylo.add_edge("B", "C", 2)?;
-    /// phylo.add_edge("A", "C", 1)?;
+    /// let mut phylo = rebarg::Phylogeny::new();
+    /// phylo.add_branch("A", "B", 10)?;
+    /// phylo.add_branch("B", "C", 2)?;
+    /// phylo.add_branch("A", "C", 1)?;
     ///
-    /// # assert_eq!(phylo.get_nodes(), vec!["A", "B", "C"].iter().collect::<Vec<_>>());
+    /// # assert_eq!(phylo.get_nodes()?, vec!["A", "B", "C"].iter().collect::<Vec<_>>());
     /// # assert_eq!(phylo.get_branches(), vec![10, 2, 1].iter().collect::<Vec<_>>());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
     /// ```mermaid
     /// graph LR;
-    /// A-->|10|B:::default;
-    /// B-.->|2|C:::recombinant;
-    /// A-.->|1|C:::recombinant;
+    ///   A-->|10|B:::default;
+    ///   B-.->|2|C:::recombinant;
+    ///   A-.->|1|C:::recombinant;
     ///    
     /// classDef default stroke:#1f77b4
     /// classDef recombinant stroke:#ff7f0e
-    /// classDef recombinant_descendant stroke:#ffbb78
     ///
     /// linkStyle default stroke:#1f77b4
     /// linkStyle 1,2 stroke:#ff7f0e
     /// ```
     ///
-    /// Manually specify type at creation.
-    ///
-    /// ```rust
-    /// let mut phylo: rebar::Phylogeny<&str, u32> = rebar::Phylogeny::new();
-    /// # assert!(phylo.get_nodes().is_empty());
-    /// # assert!(phylo.get_branches().is_empty());
-    /// ```
-    ///
     /// Use numeric nodes, with floating point branch lengths.
     ///
     /// ```rust
-    /// let mut phylo = rebar::Phylogeny::new();
-    /// phylo.add_edge(1, 2, 2.5)?;
-    /// # assert_eq!(phylo.get_nodes(), vec![1, 2].iter().collect::<Vec<_>>());
+    /// let mut phylo = rebarg::Phylogeny::new();
+    /// phylo.add_branch(1, 2, 2.5)?;
+    /// # assert_eq!(phylo.get_nodes()?, vec![1, 2].iter().collect::<Vec<_>>());
     /// # assert_eq!(phylo.get_branches(), vec![2.5].iter().collect::<Vec<_>>());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
@@ -139,18 +148,18 @@ where
     /// linkStyle 0 stroke:#1f77b4
     /// ```
     ///
-    /// Use complex data types [`Node`] and [`Branch`].
+    /// Use custom data types, such as [`Node`] and [`Branch`].
     ///
     /// ```rust
-    /// use rebar::{Phylogeny, phylogeny::Node, phylogeny::Branch};
+    /// use rebarg::{Phylogeny, Node, Branch};
     /// let node_1 = Node { label: "A" };
     /// let node_2 = Node { label: "B" };
     /// let branch = Branch { length: 1.0 };
     ///
-    /// let mut phylo = rebar::Phylogeny::new();
+    /// let mut phylo = rebarg::Phylogeny::new();
     /// # let (n1, n2, b) = (node_1.clone(), node_2.clone(), branch.clone());
-    /// phylo.add_edge(node_1, node_2, branch)?;
-    /// # assert_eq!(phylo.get_nodes(), vec![n1, n2].iter().collect::<Vec<_>>());
+    /// phylo.add_branch(node_1, node_2, branch)?;
+    /// # assert_eq!(phylo.get_nodes()?, vec![n1, n2].iter().collect::<Vec<_>>());
     /// # assert_eq!(phylo.get_branches(), vec![b].iter().collect::<Vec<_>>());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
@@ -171,31 +180,49 @@ where
         }
     }
 
-    /// Create a default [Phylogeny] with nodes (`N`) and branches (`B`).
-    pub fn default() -> Self {
-        Self::new()
+    /// Returns the `Example 1` [Phylogeny], shown in the documentation [Introduction](#introduction).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// let phylo = rebarg::Phylogeny::example_1();
+    /// ```
+    pub fn example_1() -> Phylogeny<&'static str, usize> {
+        let data = vec![
+            ("A", "B", 1),
+            ("A", "C", 1),
+            ("A", "D", 1),
+            ("B", "D", 1),
+            ("C", "F", 1),
+            ("C", "G", 1),
+            ("D", "E", 1),
+            ("E", "G", 1),
+            ("E", "H", 1),
+            ("F", "G", 1),
+        ];
+
+        Phylogeny::from_vec(data).unwrap()
     }
 
-    /// Adds an edge between parent and child nodes and returns the new edge index.
-    ///
-    /// - If the parent and child nodes don't exist yet in the phylogeny, those nodes are created.
-    /// - If an edge already exists between parent and child, updatest the branch length and returns the existing node index.
-    /// - If the new edge will create a cycle, returns an Error.
+    /// Creates a branch (`B`) between the parent and child nodes (`N`) and returns the [EdgeIndex](petgraph::graph::EdgeIndex).
     ///
     /// # Arguments
     ///
-    /// - `source` : Starting node (`N`) of the edge (ex. parent).
-    /// - `target` : Finishing node (`N`) of the edge (ex. child).
-    /// - `length` : The branch length (`L`) between source and target (ie. weight).
+    /// - `source` : Starting node (`N`) (ex. parent).
+    /// - `target` : Destination node (`N`) (ex. child).
+    /// - `branch` : The branch (`B`) to add between source and target nodes (`N`).
     ///
     /// # Examples
-    #[cfg_attr(doc, aquamarine::aquamarine)]
-    /// If the parent and child nodes don't exist yet in the phylogeny, those nodes are created.
+    #[cfg_attr(feature = "doc", aquamarine::aquamarine)]
+    ///
+    /// If the parent and child nodes don't exist yet in the phylogeny, these nodes are created.
     ///
     /// ```rust
-    /// let mut phylo = rebar::Phylogeny::new();
-    /// p.add_edge("B", "C", 1)?;
-    /// p.add_edge("A", "B", 2)?;
+    /// let mut phylo = rebarg::Phylogeny::new();
+    /// phylo.add_branch("B", "C", 1)?;
+    /// phylo.add_branch("A", "B", 2)?;
+    /// # assert_eq!(phylo.get_nodes()?, vec!["A", "B", "C"].iter().collect::<Vec<_>>());
+    /// # assert_eq!(phylo.get_branches(), vec![1, 2].iter().collect::<Vec<_>>());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
@@ -211,14 +238,38 @@ where
     /// linkStyle default stroke:#1f77b4
     /// ```
     ///
+    /// If a branch already exists between parent and child, updates the branch and returns the existing node index.
+    ///
+    /// ```rust
+    /// # let mut phylo = rebarg::Phylogeny::new();
+    /// # phylo.add_branch("B", "C", 1)?;
+    /// # phylo.add_branch("A", "B", 2)?;
+    /// phylo.add_branch("A", "B", 50)?;
+    /// # assert_eq!(phylo.get_nodes()?, vec!["A", "B", "C"].iter().collect::<Vec<_>>());
+    /// # assert_eq!(phylo.get_branches(), vec![1, 50].iter().collect::<Vec<_>>());
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
+    ///
+    /// ```mermaid
+    /// graph LR;
+    /// A-->|50|B:::default;
+    /// B-->|1|C:::default;
+    ///
+    /// classDef default stroke:#1f77b4
+    /// classDef recombinant stroke:#ff7f0e
+    /// classDef recombinant_descendant stroke:#ffbb78
+    ///
+    /// linkStyle default stroke:#1f77b4
+    /// ```
+    ///
     /// If the new edge will create a cycle, returns an Error.
     ///
     /// ```rust
-    /// # let mut phylo = rebar::Phylogeny::new();
-    /// # p.add_edge("B", "C", 1)?;
-    /// # p.add_edge("A", "B", 2)?;
-    /// p.add_edge("C", "A", 1)?
-    /// # assert!(p.add_edge("C", "A", 1).is_err());
+    /// # let mut phylo = rebarg::Phylogeny::new();
+    /// # phylo.add_branch("B", "C", 1)?;
+    /// # phylo.add_branch("A", "B", 2)?;
+    /// phylo.add_branch("C", "A", 1);
+    /// # assert!(phylo.add_branch("C", "A", 1).is_err());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
@@ -234,7 +285,7 @@ where
     ///
     /// linkStyle default stroke:#1f77b4
     /// ```
-    pub fn add_edge(&mut self, source: N, target: N, branch: B) -> Result<EdgeIndex, Report> {
+    pub fn add_branch(&mut self, source: N, target: N, branch: B) -> Result<EdgeIndex, Report> {
         // check if parent in phylogeny, add node if not
         let parent_node_index = match self.get_node_index(&source) {
             Ok(node_index) => node_index,
@@ -260,7 +311,7 @@ where
         Ok(edge_index)
     }
 
-    /// Add node to the phylogeny and returns the node index.
+    /// Adds a new node to the phylogeny and returns the node index.
     ///
     /// - If the node already exists in the phylogeny, returns the existing node index.
     ///
@@ -269,19 +320,22 @@ where
     /// - `node` - Node (`N`) to add to the phylogeny.
     ///
     /// # Examples
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+    #[cfg_attr(feature = "doc", aquamarine::aquamarine)]
     /// ```rust
-    /// use petgraph::graph::NodeIndex;
+    /// use rebarg::Phylogeny;
     ///
-    /// let mut phylo = rebar::Phylogeny::new();
-    /// assert_eq!(p.add_node("A"), NodeIndex::new(0));
-    /// assert_eq!(p.add_node("B"), NodeIndex::new(1));
+    /// let mut phylo: Phylogeny<&str, u32> = Phylogeny::new();
+    /// let a_i = phylo.add_node("A (i=0)");
+    /// let b_i = phylo.add_node("B (i=1)");
+    /// # use petgraph::graph::NodeIndex;
+    /// # assert_eq!(a_i, NodeIndex::new(0));
+    /// # assert_eq!(b_i, NodeIndex::new(1));
     /// ```
     ///
     /// ```mermaid
     /// graph LR;
-    /// A:::default;
-    /// B:::default;
+    /// A["A (i=0)"]:::default;
+    /// B["B (i=1)"]:::default;
     ///
     /// classDef default stroke:#1f77b4
     /// classDef recombinant stroke:#ff7f0e
@@ -303,7 +357,7 @@ where
     /// * `data` : Vector of tuples in the form: (Parent (`N`), Child (`N`), Branch Length (`L`))
     ///
     /// # Examples
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+
     /// ```rust
     /// use rebar::Phylogeny;
     /// let v = vec![("A", "B", 1), ("A", "C", 3),  ("B", "C", 2) ];
@@ -329,7 +383,7 @@ where
 
         // add edges between parent to child, creating new nodes as needed
         data.into_iter().try_for_each(|(p, c, l)| {
-            phylogeny.add_edge(p, c, l)?;
+            phylogeny.add_branch(p, c, l)?;
             Ok::<(), Report>(())
         })?;
 
@@ -349,10 +403,10 @@ where
     /// * `recombination` - `true` if descendants arising from recombination should be included. In the [Mermaid](Phylogeny::to_mermaid) representation, this means we are allowed to follow dashed, orange edges when `true`.
     ///
     /// # Examples
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+
     /// **Note**: See the [Toy1](#toy1) diagram to help interpret the results visually.
     ///
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+
     /// ```rust
     /// use rebar::dataset::toy1;
     ///
@@ -524,7 +578,7 @@ where
     /// * `node` - A node in the phylogeny.
     /// * `recombination` - True if descendants arising from recombination should be included.
     ///
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+
     /// ```mermaid
     /// ---
     /// title: Toy1
@@ -586,7 +640,7 @@ where
     /// use petgraph::graph::NodeIndex;
     ///
     /// let mut phylo = Phylogeny::new();
-    /// phylo.add_edge("A", "B", 1);
+    /// phylo.add_branch("A", "B", 1);
     /// // B was the second node added to the tree, with a 0-based index of 1
     /// let node_index = NodeIndex::new(1);
     /// let expected = &"B";
@@ -628,8 +682,16 @@ where
     /// let expected: Vec<_> = ["A", "B", "C", "D", "F", "G", "E"].iter().collect();
     /// assert_eq!(observed, expected);
     /// ```
-    pub fn get_nodes(&self) -> Vec<&N> {
-        self.graph.node_references().map(|(_i, n)| n).collect()
+    pub fn get_nodes(&self) -> Result<Vec<&N>, Report> {
+        // get nodes via a depth-first search from the root
+        let root_index = self.get_root_index()?;
+        let mut dfs = Dfs::new(&self.graph, root_index);
+        let mut nodes = Vec::new();
+        while let Some(node_index) = dfs.next(&self.graph) {
+            let node = self.get_node(&node_index)?;
+            nodes.push(node);
+        }
+        Ok(nodes)
     }
 
     /// Returns the node index that corresponds to the node data.
@@ -665,8 +727,8 @@ where
     /// use petgraph::graph::NodeIndex;
     ///
     /// let mut phylo = Phylogeny::new();
-    /// phylo.add_edge("B", "C", 1);
-    /// phylo.add_edge("A", "B", 1);
+    /// phylo.add_branch("B", "C", 1);
+    /// phylo.add_branch("A", "B", 1);
     ///
     /// let observed = phylo.get_node_indices();
     /// let expected = vec![NodeIndex::new(0), NodeIndex::new(1), NodeIndex::new(2)];
@@ -678,7 +740,7 @@ where
     }
 
     /// Returns the node representing the most recent ancestor that is a recombinant.
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+
     /// ```mermaid
     /// ---
     /// title: Toy1
@@ -750,8 +812,8 @@ where
     /// use rebar::Phylogeny;
     ///
     /// let mut p = Phylogeny::new();
-    /// p.add_edge("B", "C", 1);
-    /// p.add_edge("A", "B", 1);
+    /// p.add_branch("B", "C", 1);
+    /// p.add_branch("A", "B", 1);
     ///
     /// let observed = p.get_root()?;
     /// let expected = "A";
@@ -765,7 +827,7 @@ where
     }
 
     /// Returns node data of immediate parents.
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+
     /// ```mermaid
     /// ---
     /// title: Toy1
@@ -794,7 +856,7 @@ where
     /// ```
     pub fn get_parents(&self, node: &N) -> Result<Vec<&N>, Report> {
         let node_index = self.get_node_index(node)?;
-        let mut neighbors = self.graph.neighbors_directed(node_index, Direction::Incoming);
+        let neighbors = self.graph.neighbors_directed(node_index, Direction::Incoming);
         let mut parents = neighbors
             .into_iter()
             .map(|node_index| {
@@ -811,7 +873,7 @@ where
     /// Get all paths from the source node to the target node, always traveling
     /// in the specified direction (Incoming towards root, Outgoing towards tips)
     ///
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+
     /// ```mermaid
     /// ---
     /// title: Toy1
@@ -890,8 +952,8 @@ where
     /// use petgraph::graph::NodeIndex;
     ///
     /// let mut p = Phylogeny::new();
-    /// p.add_edge("B", "C", 1);
-    /// p.add_edge("A", "B", 1);
+    /// p.add_branch("B", "C", 1);
+    /// p.add_branch("A", "B", 1);
     ///
     /// let observed = p.get_root_index()?;
     /// // "A" is the root, and it was the 3rd node add, with a 0-based index of 2
@@ -926,7 +988,7 @@ where
     /// let mut phylo = Phylogeny::new();
     /// assert_eq!(true, phylo.is_empty());
     ///
-    /// phylo.add_edge("A", "B", 1);
+    /// phylo.add_branch("A", "B", 1);
     /// assert_eq!(false, phylo.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
@@ -936,7 +998,7 @@ where
     /// Returns true if a node is a recombinant with multiple immediate parents.
     ///
     /// Checks the number of incoming edges to a node, as recombinants will have more than 1 (ie. more than 1 parent).
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+
     /// ```mermaid
     /// ---
     /// title: Toy1
@@ -972,7 +1034,7 @@ where
     }
 
     /// Returns true if a node is a descendant of a recombinant.
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+
     /// ```mermaid
     /// ---
     /// title: Toy1
@@ -1002,13 +1064,13 @@ where
     /// ```
     pub fn is_recombinant_descendant(&self, node: &N) -> Result<bool, Report> {
         match self.get_recombinant_ancestor(node)? {
-            Some(node) => Ok(true),
+            Some(_) => Ok(true),
             None => Ok(false),
         }
     }
 
     /// Returns the phylogeny as a [Dot](https://graphviz.org/doc/info/lang.html) graphviz String.
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+
     /// ```mermaid
     /// ---
     /// title: Toy1
@@ -1095,7 +1157,7 @@ where
     }
 
     /// Returns the phylogeny as a [Mermaid](https://mermaid.js.org/) graph String.
-    #[cfg_attr(doc, aquamarine::aquamarine)]
+    ///
     /// ```mermaid
     /// ---
     /// title: Toy1
@@ -1135,7 +1197,7 @@ where
 
         mermaid.push_str("  subgraph Legend\n");
         mermaid.push_str("    direction LR;\n");
-        mermaid.push_str("    D1[ ] -..->|Non-Recombination| D2[ ];\n");
+        mermaid.push_str("    D1[ ] --->|Non-Recombination| D2[ ];\n");
         link_style.entry("default").or_insert_with(Vec::new).push(link_i);
         link_i += 1;
         mermaid.push_str("    style D1 height:0px;\n");
@@ -1206,7 +1268,7 @@ where
         }
 
         // add any floating nodes with no connections
-        self.get_nodes().iter().filter(|node| !nodes_seen.contains(node)).for_each(|node| {
+        self.get_nodes()?.iter().filter(|node| !nodes_seen.contains(node)).for_each(|node| {
             mermaid.push_str(&format!("    {node};\n"));
         });
 
@@ -1397,7 +1459,7 @@ where
     //                     debug!("Connecting child {child} to new parent: {parent}");
     //                     let parent_node_index = self.get_node_index(parent)?;
     //                     // todo!() Branch length!
-    //                     self.graph.add_edge(*parent_node_index, *child_node_index, branch_length);
+    //                     self.graph.add_branch(*parent_node_index, *child_node_index, branch_length);
     //                     Ok::<(), Report>(())
     //                 })?;
     //                 Ok::<(), Report>(())
