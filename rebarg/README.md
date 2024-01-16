@@ -1,6 +1,6 @@
 # rebarg
 
-A library for ancestral recombination graphs (ARG).
+A library for phylogenetic methods and ancestral recombination graphs (ARG).
 
 # Introduction
 
