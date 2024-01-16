@@ -6,14 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aquamarine = { version = "0.5.0",   default-features = false, optional = true}
 color-eyre = { version = "0.6.2",   default-features = false }
 itertools  = { version = "0.12.0",  default-features = false, features = ["use_std"] }
 num-traits = { version = "0.2.17",  default-features = false }
 petgraph   = { version = "0.6.3",   default-features = false, features = ["serde-1"] }
 serde      = { version = "1.0.163", default-features = false, features = ["derive"] }
 structdoc  = { version = "0.1.4",   default-features = false, features = ["structdoc-derive"], optional = true}
-tempfile   = { version = "3.8.1",   default-features = false, option = true }
+tempfile   = { version = "3.8.1",   default-features = false, optional = true }
 
-[features]
-doc = ["aquamarine", "structdoc"]
+[target.'cfg(doc)'.dependencies]
+# cargo rustdoc --open -- --html-in-header=assets/docs/header.html --html-after-content=assets/docs/after-content.html
