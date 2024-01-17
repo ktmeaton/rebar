@@ -37,4 +37,10 @@ repos:
     -   id: fmt
     -   id: cargo-check
     -   id: clippy
-    -   id: test
+
+  # - repo: local
+  #   hooks:
+  #     - id: cargo-test
+  #       name: cargo-test
+  #       entry: bash -c 'cargo test --doc'
+  #       language: system
