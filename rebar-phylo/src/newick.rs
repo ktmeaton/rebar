@@ -1,5 +1,5 @@
-use color_eyre::eyre::{eyre, Report, Result};
 use crate::FromNewick;
+use color_eyre::eyre::{eyre, Report, Result};
 use std::fmt::Display;
 
 /// Returns a vector of nodes (`N`) and branches (`B`) from an input Newick string.
@@ -70,7 +70,7 @@ pub fn str_to_vec<N, B>(
     mut node_i: usize,
 ) -> Result<Vec<(N, N, B)>, Report>
 where
-    N: Clone + Default + Display + FromNewick,
+    N: Clone + Display + FromNewick,
     B: Display + FromNewick,
 {
     // strip ';' characters
@@ -166,8 +166,6 @@ fn get_inside_parentheses(newick: &str) -> Result<(usize, usize), Report> {
     }
     match (start, end) {
         (Some(s), Some(e)) => Ok((s, e)),
-        _ => Err(eyre!(
-            "Failed to find matching outer parentheses from newick: {newick}"
-        ))?,
+        _ => Err(eyre!("Failed to find matching outer parentheses from newick: {newick}"))?,
     }
 }

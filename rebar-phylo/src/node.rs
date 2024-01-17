@@ -31,21 +31,19 @@ impl<N> FromStr for Node<N> where N: Default + FromStr {
 #[rustfmt::skip]
 impl<N> Node<N> where N: Default { fn new() -> Self { Node { label: N::default() } } }
 
-
 impl<N> FromNewick for Node<N>
 where
     N: Default + FromStr,
 {
-    /// Returns a [Node] created from a [Newick](https://en.wikipedia.org/wiki/Newick_format) [`str`].
+    /// Returns a [`Node`] created from a [Newick](https://en.wikipedia.org/wiki/Newick_format) node [`str`].
     ///
-    /// # Examples
+    /// ## Examples
     ///
     /// Just a node name.
     ///
     /// ```rust
     /// use rebar_phylo::{Node, FromNewick};
-    /// let newick = "A;";
-    /// let node = Node::from_newick(&newick)?;
+    /// let node = Node::from_newick(&"A;")?;
     /// assert_eq!(node, Node { label: "A".to_string()});
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
@@ -54,8 +52,7 @@ where
     ///
     /// ```rust
     /// use rebar_phylo::{Node, FromNewick};
-    /// let newick = "A:2:90;";
-    /// let node = Node::from_newick(&newick)?;
+    /// let node = Node::from_newick(&"A:2:90;")?;
     /// assert_eq!(node, Node { label: "A".to_string()});
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```

@@ -5,10 +5,8 @@ use num_traits::AsPrimitive;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
-use std::str::FromStr;
 
-/// A [`Branch`] in the [`Phylogeny`](crate::Phylogeny) graph.
+/// A [`Branch`] in the [`Phylogeny`](crate::Phylogeny).
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Branch {
     /// [`Branch`] length (ex. 1.0).
@@ -26,37 +24,36 @@ impl Display for Branch { fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Resu
 #[rustfmt::skip]
 impl Branch { pub fn new() -> Self { Branch { length: 0.0, confidence: 0.0 } } }
 
-
 impl FromNewick for Branch {
-    /// Returns a branch (`B`) created from a Newick node string.
+    /// Returns a branch (`B`) created from a [Newick](https://en.wikipedia.org/wiki/Newick_format) node [`str`].
     ///
     /// # Examples
     ///
     /// Just a node name.
     ///
     /// ```rust
-    /// let newick = "A";
-    /// let branch = rebarg::Branch::from_newick(&newick)?;
-    /// # use std::str::FromStr;
-    /// # assert_eq!(branch, rebarg::Branch { length: 0.0, confidence: 0.0 });
+    /// use rebar_phylo::{Branch, FromNewick};
+    ///
+    /// let branch = Branch::from_newick(&"A")?;
+    /// assert_eq!(branch, Branch { length: 0.0, confidence: 0.0 });
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
     /// Just branch attributes.
     ///
     /// ```rust
-    /// let newick = ":2:90";
-    /// let branch = rebarg::Branch::from_newick(&newick)?;
-    /// # assert_eq!(branch, rebarg::Branch { length: 2.0, confidence: 90.0 });
+    /// # use rebar_phylo::{Branch, FromNewick};
+    /// let branch = Branch::from_newick(&":2:90")?;
+    /// assert_eq!(branch, Branch { length: 2.0, confidence: 90.0 });
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
     /// Branch confidence as a decimal.
     ///
     /// ```rust
-    /// let newick = ":2:0.75";
-    /// let branch = rebarg::Branch::from_newick(&newick)?;
-    /// # assert_eq!(branch, rebarg::Branch { length: 2.0, confidence: 75.0 });
+    /// # use rebar_phylo::{Branch, FromNewick};
+    /// let branch = Branch::from_newick(&":2:0.75")?;
+    /// assert_eq!(branch, Branch { length: 2.0, confidence: 75.0 });
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     fn from_newick(newick: &str) -> Result<Branch, Report> {

@@ -1,12 +1,11 @@
 #![doc = include_str!("../README.md")]
 
 use color_eyre::eyre::{Report, Result};
-use std::fmt::Display;
 
 // mod branch;
-pub mod newick;
 mod branch;
-mod examples;
+pub mod examples;
+pub mod newick;
 mod node;
 mod phylogeny;
 
@@ -25,7 +24,7 @@ pub use phylogeny::Phylogeny;
 
 /// Returns an object created from a [Mermaid](https://mermaid.js.org/) [`str`].
 pub trait FromMermaid {
-    fn from_mermaid(&self) -> Result<String, Report>;
+    fn from_mermaid(mermaid: &str) -> Result<String, Report>;
 }
 
 /// Returns an object created from a [Newick](https://en.wikipedia.org/wiki/Newick_format) [`str`].
