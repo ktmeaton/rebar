@@ -50,22 +50,14 @@ where
     T: Deserialize<'t> + Serialize,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            serde_json::to_string(self).expect("Failed to serialize table.")
-        )
+        write!(f, "{}", serde_json::to_string(self).expect("Failed to serialize table."))
     }
 }
 
 impl<T> Table<T> {
     /// Create a new table with empty headers and rows.
     pub fn new() -> Self {
-        Table {
-            headers: Vec::new(),
-            rows: Vec::new(),
-            path: None,
-        }
+        Table { headers: Vec::new(), rows: Vec::new(), path: None }
     }
 }
 
@@ -142,9 +134,7 @@ where
         let new = column.len();
 
         if ex != new {
-            return Err(eyre!(
-                "New column size ({new}) does not matching existing table ({ex})."
-            ));
+            return Err(eyre!("New column size ({new}) does not matching existing table ({ex})."));
         }
 
         self.headers.push(header);
@@ -376,10 +366,7 @@ where
         };
 
         // write headers
-        let line = format!(
-            "{}\n",
-            table.headers.iter().join(delim.to_string().as_str())
-        );
+        let line = format!("{}\n", table.headers.iter().join(delim.to_string().as_str()));
         file.write_all(line.as_bytes())
             .wrap_err_with(|| format!("Unable to write table headers: {line}"))?;
 

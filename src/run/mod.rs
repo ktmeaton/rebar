@@ -18,10 +18,7 @@ use std::path::{Path, PathBuf};
 pub struct Args {
     /// Dataset directory.
     #[clap(short = 'd', long, required = true)]
-    #[serde(
-        skip_serializing_if = "Args::is_default_dataset_dir",
-        skip_deserializing
-    )]
+    #[serde(skip_serializing_if = "Args::is_default_dataset_dir", skip_deserializing)]
     pub dataset_dir: PathBuf,
 
     #[command(flatten)]
@@ -82,10 +79,7 @@ pub struct Args {
     ///
     /// If the directory does not exist, it will be created.
     #[clap(short = 'o', long, required = true)]
-    #[serde(
-        skip_serializing_if = "Args::is_default_output_dir",
-        skip_deserializing
-    )]
+    #[serde(skip_serializing_if = "Args::is_default_output_dir", skip_deserializing)]
     pub output_dir: PathBuf,
 
     /// Number of CPU threads to use.
@@ -222,9 +216,6 @@ impl Default for Input {
 
 impl Input {
     pub fn new() -> Self {
-        Input {
-            populations: None,
-            alignment: None,
-        }
+        Input { populations: None, alignment: None }
     }
 }

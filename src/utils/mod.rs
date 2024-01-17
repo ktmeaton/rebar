@@ -25,10 +25,7 @@ pub async fn download_file(url: &str, output_path: &Path, decompress: bool) -> R
 
     let response = reqwest::get(url).await?;
     if response.status() != 200 {
-        return Err(eyre!(
-            "Unable to download file: {url}\nStatus code {}.",
-            response.status()
-        ));
+        return Err(eyre!("Unable to download file: {url}\nStatus code {}.", response.status()));
     }
 
     if decompress {
@@ -141,12 +138,8 @@ pub async fn download_github(
     let body: Vec<BTreeMap<String, serde_json::Value>> = response.json().await?;
     if body.is_empty() {
         return Err(eyre!("No GitHub commits were found for: {}", url)
-            .suggestion(format!(
-                "Does your dataset tag ({tag}) predate the creation of this file?"
-            ))
-            .suggestion(format!(
-                "Repository: https://github.com/{repo}, File: {remote_path:?}"
-            )));
+            .suggestion(format!("Does your dataset tag ({tag}) predate the creation of this file?"))
+            .suggestion(format!("Repository: https://github.com/{repo}, File: {remote_path:?}")));
     }
 
     let sha = body[0]["sha"].to_string().replace('"', "");

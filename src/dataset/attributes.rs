@@ -283,11 +283,7 @@ impl Compatibility {
     /// assert_eq!(c, Compatibility { min_date: None, max_date: None, cli_version: None});
     /// ```
     pub fn new() -> Self {
-        Compatibility {
-            min_date: None,
-            max_date: None,
-            cli_version: None,
-        }
+        Compatibility { min_date: None, max_date: None, cli_version: None }
     }
 }
 

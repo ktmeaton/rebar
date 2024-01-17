@@ -72,10 +72,7 @@ pub async fn download(args: &Args) -> Result<Dataset, Report> {
 
         // Warn if summary conflicts with any CLI args
         if summary.name != args.name || summary.tag != args.tag {
-            warn!(
-                "Dataset has been changed by summary to: {} {}",
-                &summary.name, &summary.tag
-            );
+            warn!("Dataset has been changed by summary to: {} {}", &summary.name, &summary.tag);
         }
         summary
     } else {
@@ -97,10 +94,7 @@ pub async fn download(args: &Args) -> Result<Dataset, Report> {
         info!("Creating output directory: {:?}", &args.output_dir);
         create_dir_all(&args.output_dir)?;
     } else {
-        warn!(
-            "Proceed with caution! --output-dir {:?} already exists.",
-            args.output_dir
-        );
+        warn!("Proceed with caution! --output-dir {:?} already exists.", args.output_dir);
     }
 
     // --------------------------------------------------------------------

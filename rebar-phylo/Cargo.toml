@@ -1,5 +1,5 @@
 [package]
-name = "rebarg"
+name = "rebar-phylo"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,8 +11,9 @@ itertools  = { version = "0.12.0",  default-features = false, features = ["use_s
 num-traits = { version = "0.2.17",  default-features = false }
 petgraph   = { version = "0.6.3",   default-features = false, features = ["serde-1"] }
 serde      = { version = "1.0.163", default-features = false, features = ["derive"] }
-structdoc  = { version = "0.1.4",   default-features = false, features = ["structdoc-derive"], optional = true}
+serde_json = { version = "1.0.96",  default-features = false, features = ["std"] }
 tempfile   = { version = "3.8.1",   default-features = false, optional = true }
+trait-group = { version = "0.1.0",  default-features = false}
 
-[target.'cfg(doc)'.dependencies]
+# docs cmd
 # cargo rustdoc --open -- --html-in-header=assets/docs/header.html --html-after-content=assets/docs/after-content.html

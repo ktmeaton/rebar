@@ -29,24 +29,21 @@
 //!
 //!    ![A plot of the breakpoints and parental regions for the recombinant SARS-CoV-2 lineage XBB.1.16. At the top are rectangles arranged side-by-side horizontally. These are colored and labelled by each parent (ex. BJ.1., CJ.1) and are intepreted as reading left to right, 5' to 3'. Below these regions are genomic annotations, which show the coordinates for each gene. At the bottom are horizontal tracks, where each row is a sample, and each column is a mutation. Mutations are colored according to which parent the recombination region derives from.][assets/images/XBB_BJ.1_CJ.1_22897-22941.png]
 
-pub mod cli;
-pub mod dataset;
-pub mod phylogeny;
-pub mod run;
-pub mod table;
-mod utils;
+// pub mod cli;
+// pub mod dataset;
+// pub mod run;
+// pub mod table;
+// mod utils;
 
+// // pub use crate::dataset::Dataset;
+// #[doc(inline)]
+// pub use crate::cli::Cli;
+// #[doc(inline)]
 // pub use crate::dataset::Dataset;
-#[doc(inline)]
-pub use crate::cli::Cli;
-#[doc(inline)]
-pub use crate::dataset::Dataset;
-#[doc(inline)]
-pub use crate::phylogeny::Phylogeny;
-#[doc(inline)]
-pub use table::Table;
-#[doc(inline)]
-pub use utils::verbosity::Verbosity;
+// #[doc(inline)]
+// pub use table::Table;
+// #[doc(inline)]
+// pub use utils::verbosity::Verbosity;
 // pub use utils::verbosity::Verbosity;
 // pub use utils::table;
 // pub use utils::table::Table;

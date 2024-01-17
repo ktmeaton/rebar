@@ -38,15 +38,10 @@ impl Args {
 pub fn list(args: &Args) -> Result<Table<String>, Report> {
     // table of name, tag, cli_version
     let mut table = Table::new();
-    table.headers = vec![
-        "Name",
-        "CLI Version",
-        "Minimum Tag Date",
-        "Maximum Tag Date",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
+    table.headers = vec!["Name", "CLI Version", "Minimum Tag Date", "Maximum Tag Date"]
+        .into_iter()
+        .map(String::from)
+        .collect();
 
     for name in Name::iter() {
         // Check if this was not the name requested by CLI args
@@ -70,12 +65,7 @@ pub fn list(args: &Args) -> Result<Table<String>, Report> {
         };
 
         // Add to row
-        let row = vec![
-            name.to_string(),
-            cli_version.to_string(),
-            min_date,
-            max_date,
-        ];
+        let row = vec![name.to_string(), cli_version.to_string(), min_date, max_date];
         table.rows.push(row);
     }
 

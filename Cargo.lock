@@ -1336,6 +1336,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rebar-phylo"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "itertools 0.12.0",
+ "num-traits",
+ "petgraph",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "trait-group",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1721,6 +1735,12 @@ checksum = "0955b8137a1df6f1a2e9a37d8a6656291ff0297c1a97c24e0d8425fe2312f79a"
 dependencies = [
  "once_cell",
 ]
+
+[[package]]
+name = "trait-group"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1b362975c6f0f21a41fbb9ca91fe5dcb7e01e12331360374347476b45f5cb9c"
 
 [[package]]
 name = "try-lock"

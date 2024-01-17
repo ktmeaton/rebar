@@ -3,6 +3,11 @@ name = "rebar"
 version = "0.3.0"
 edition = "2021"
 
+[workspace]
+members = [
+    "rebar-phylo",
+]
+
 [dependencies]
 aquamarine = { version = "0.5.0", default-features = false}
 chrono          = { version = "0.4.31",  default-features = false, features = ["clock", "serde"] }
