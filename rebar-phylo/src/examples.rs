@@ -5,7 +5,7 @@ use crate::Phylogeny;
 /// Returns a [`Phylogeny`], with fully sampled internal
 /// nodes and  recombination from 1-3 parents.
 ///
-#[doc = include_str!("../assets/docs/example_1.md")]
+#[doc = include_str!("../../assets/docs/example_1.md")]
 ///
 /// # Examples
 ///

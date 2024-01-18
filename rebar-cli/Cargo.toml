@@ -1,0 +1,9 @@
+[package]
+name = "rebar-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap  = { version = "4.2.7", default-features = false, features = ["std", "derive"] }
+rebar-dataset = { version = "0.3.0", default-features = false, path = "../rebar-dataset" }
+serde = { version = "1.0.163", default-features = false, features = ["derive"] }

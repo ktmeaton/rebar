@@ -26,7 +26,7 @@
 
     The recombination search can be customized to test your hypotheses about which parents and genomic regions are recombining. If that sounds overwhelming, you can always just use the pre-configured datasets (ex. SARS-CoV-2) that are validated against known recombinants.
 
-![A plot of the breakpoints and parental regions for the recombinant SARS-CoV-2 lineage XBB.1.16. At the top are rectangles arranged side-by-side horizontally. These are colored and labelled by each parent (ex. BJ.1., CJ.1) and are intepreted as reading left to right, 5' to 3'. Below these regions are genomic annotations, which show the coordinates for each gene. At the bottom are horizontal tracks, where each row is a sample, and each column is a mutation. Mutations are colored according to which parent the recombination region derives from.](assets/images/XBB_BJ.1_CJ.1_22897-22941.png)
+![A plot of the breakpoints and parental regions for the recombinant SARS-CoV-2 lineage XBB.1.16. At the top are rectangles arranged side-by-side horizontally. These are colored and labelled by each parent (ex. BJ.1., CJ.1) and are intepreted as reading left to right, 5' to 3'. Below these regions are genomic annotations, which show the coordinates for each gene. At the bottom are horizontal tracks, where each row is a sample, and each column is a mutation. Mutations are colored according to which parent the recombination region derives from.](https://raw.githubusercontent.com/phac-nml/rebar/7a9bd4c2/assets/images/XBB_BJ.1_CJ.1_22897-22941.png)
 
 ## Install
 

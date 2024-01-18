@@ -1,5 +1,8 @@
+pub mod dataset;
+
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 
 // -----------------------------------------------------------------------------
 // Verbosity
@@ -15,8 +18,8 @@ pub enum Verbosity {
     Error,
 }
 
-impl std::fmt::Display for Verbosity {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl Display for Verbosity {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         // Convert to lowercase for RUST_LOG env var compatibility
         let lowercase = format!("{:?}", self).to_lowercase();
         write!(f, "{lowercase}")

@@ -11,6 +11,7 @@ use petgraph::Direction;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::From;
+
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
@@ -23,7 +24,7 @@ use std::hash::Hash;
 /// - See the [Implementation](#impl-Phylogeny<N,+B>) section for the allowed types based on traits.
 /// - See the [`Node`](crate::Node) and [`Branch`](crate::Branch) structs for examples of complex data types.
 ///
-#[doc = include_str!("../assets/docs/example_1.md")]
+#[doc = include_str!("../../assets/docs/example_1.md")]
 ///
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Phylogeny<N, B> {
@@ -101,8 +102,8 @@ where
     /// ```rust
     /// let mut phylo = rebar_phylo::Phylogeny::new();
     /// phylo.add_branch(1, 2, 2.5)?;
-    /// # assert_eq!(phylo.get_nodes()?, vec![1, 2].iter().collect::<Vec<_>>());
-    /// # assert_eq!(phylo.get_branches()?, vec![2.5].iter().collect::<Vec<_>>());
+    /// # assert_eq!(phylo.get_nodes()?,    [&1, &2]);
+    /// # assert_eq!(phylo.get_branches()?, [&2.5]);
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
@@ -124,12 +125,12 @@ where
     /// let node_1 = Node { label: "A" };
     /// let node_2 = Node { label: "B" };
     /// let branch = Branch { length: 1.0, confidence: 0.0 };
+    /// # let (n1, n2, b) = (node_1.clone(), node_2.clone(), branch.clone());
     ///
     /// let mut phylo = rebar_phylo::Phylogeny::new();
-    /// # let (n1, n2, b) = (node_1.clone(), node_2.clone(), branch.clone());
     /// phylo.add_branch(node_1, node_2, branch)?;
-    /// # assert_eq!(phylo.get_nodes()?, vec![n1, n2].iter().collect::<Vec<_>>());
-    /// # assert_eq!(phylo.get_branches()?, vec![b].iter().collect::<Vec<_>>());
+    /// # assert_eq!(phylo.get_nodes()?, [&n1, &n2]);
+    /// # assert_eq!(phylo.get_branches()?, [&b]);
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
@@ -165,8 +166,8 @@ where
     /// let mut phylo = rebar_phylo::Phylogeny::new();
     /// phylo.add_branch("B", "C", 1)?;
     /// phylo.add_branch("A", "B", 2)?;
-    /// # assert_eq!(phylo.get_nodes()?, vec!["A", "B", "C"].iter().collect::<Vec<_>>());
-    /// # assert_eq!(phylo.get_branches()?, vec![1, 2].iter().collect::<Vec<_>>());
+    /// # assert_eq!(phylo.get_nodes()?,    [&"A", &"B", &"C"]);
+    /// # assert_eq!(phylo.get_branches()?, [&1, &2]);
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
@@ -189,8 +190,8 @@ where
     /// # phylo.add_branch("B", "C", 1)?;
     /// # phylo.add_branch("A", "B", 2)?;
     /// phylo.add_branch("A", "B", 50)?;
-    /// # assert_eq!(phylo.get_nodes()?, vec!["A", "B", "C"].iter().collect::<Vec<_>>());
-    /// # assert_eq!(phylo.get_branches()?, vec![1, 50].iter().collect::<Vec<_>>());
+    /// # assert_eq!(phylo.get_nodes()?,    [&"A", &"B", &"C"]);
+    /// # assert_eq!(phylo.get_branches()?, [&1, &50]);
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
@@ -318,13 +319,13 @@ where
     /// ```no_run
     /// let phylo = rebar_phylo::examples::example_1();
     /// ```
-    #[doc = include_str!("../assets/docs/example_1.md")]
+    #[doc = include_str!("../../assets/docs/example_1.md")]
     ///
     /// With Recombination (`true`)
     ///
     /// ```rust
     /// # let phylo = rebar_phylo::examples::example_1();
-    /// assert_eq!(phylo.get_ancestors(&"B", true)?, vec![vec![&"A"]]);
+    /// assert_eq!(phylo.get_ancestors(&"B", true)?, [[&"A"]]);
     /// assert_eq!(phylo.get_ancestors(&"D", true)?, vec![vec![&"B", &"A"], vec![&"A"]]);
     /// assert_eq!(phylo.get_ancestors(&"E", true)?, vec![vec![&"D", &"B", &"A"], vec![&"D", &"A"]]);
     /// # Ok::<(), color_eyre::eyre::Report>(())
@@ -335,8 +336,8 @@ where
     /// ```rust
     /// # let phylo = rebar_phylo::examples::example_1();
     /// assert_eq!(phylo.get_ancestors(&"D", false)?, Vec::<Vec<&&str>>::new());
-    /// assert_eq!(phylo.get_ancestors(&"E", false)?, vec![vec![&"D"]]);
-    /// assert_eq!(phylo.get_ancestors(&"H", false)?, vec![vec![&"E", &"D"]]);
+    /// assert_eq!(phylo.get_ancestors(&"E", false)?, [[&"D"]]);
+    /// assert_eq!(phylo.get_ancestors(&"H", false)?, [[&"E", &"D"]]);
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     pub fn get_ancestors<'p>(
@@ -375,7 +376,7 @@ where
     /// ## Arguments
     ///
     /// * `edge` - The [`EdgeIndex`] of a branch in the phylogeny.
-    ///    
+    ///
     /// ## Examples
     ///
     /// ```rust
@@ -418,7 +419,7 @@ where
     /// let phylo = rebar_phylo::examples::example_1();
     /// ```
     ///
-    #[doc = include_str!("../assets/docs/example_1.md")]
+    #[doc = include_str!("../../assets/docs/example_1.md")]
     ///
     /// With Recombination (`true`)
     ///
@@ -469,15 +470,15 @@ where
     /// ```no_run
     /// let phylo = rebar_phylo::examples::example_1();
     /// ```
-    #[doc = include_str!("../assets/docs/example_1.md")]
+    #[doc = include_str!("../../assets/docs/example_1.md")]
     ///
     /// With Recombination (`true`)
     ///
     /// ```rust
     /// # let phylo = rebar_phylo::examples::example_1();
-    /// assert_eq!(phylo.get_descendants(&"E", true)?, vec![&"G", &"H"]);
-    /// assert_eq!(phylo.get_descendants(&"D", true)?, vec![&"E", &"G", &"H"]);
-    /// assert_eq!(phylo.get_descendants(&"B", true)?, vec![&"D", &"E", &"G", &"H"]);
+    /// assert_eq!(phylo.get_descendants(&"E", true)?, [&"G", &"H"]);
+    /// assert_eq!(phylo.get_descendants(&"D", true)?, [&"E", &"G", &"H"]);
+    /// assert_eq!(phylo.get_descendants(&"B", true)?, [&"D", &"E", &"G", &"H"]);
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
@@ -485,8 +486,8 @@ where
     ///
     /// ```rust
     /// # let phylo = rebar_phylo::examples::example_1();
-    /// assert_eq!(phylo.get_descendants(&"E", false)?, vec![&"H"]);
-    /// assert_eq!(phylo.get_descendants(&"D", false)?, vec![&"E", &"H"]);
+    /// assert_eq!(phylo.get_descendants(&"E", false)?, [&"H"]);
+    /// assert_eq!(phylo.get_descendants(&"D", false)?, [&"E", &"H"]);
     /// assert_eq!(phylo.get_descendants(&"B", false)?, Vec::<&&str>::new());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
@@ -538,7 +539,7 @@ where
     /// assert_eq!(phylo.get_node(&node_index)?, &"B");
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
-    pub fn get_node(&self, node_index: &NodeIndex) -> Result<&N> {
+    pub fn get_node(&self, node_index: &NodeIndex) -> Result<&N, Report> {
         self.graph
             .node_weight(*node_index)
             .ok_or_else(|| eyre!("Failed to get node data for node index {node_index:?}"))
@@ -575,14 +576,14 @@ where
     /// use rebar_phylo::Phylogeny;
     /// use petgraph::graph::NodeIndex;
     ///
-    /// let v = vec![("A", "B", 1), ("A", "C", 3),  ("B", "C", 2) ];
+    /// let v = [("A", "B", 1), ("A", "C", 3),  ("B", "C", 2) ];
     /// let phylo = Phylogeny::from(v);
     ///
     /// assert_eq!(phylo.get_node_index(&"B")?, NodeIndex::new(1));
     /// assert!(phylo.get_node_index(&"X").is_err());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
-    pub fn get_node_index(&self, node: &N) -> Result<NodeIndex> {
+    pub fn get_node_index(&self, node: &N) -> Result<NodeIndex, Report> {
         self.graph
             .node_references()
             .filter_map(|(i, n)| (*n == *node).then_some(i))
@@ -601,7 +602,7 @@ where
     /// ```no_run
     /// let phylo = rebar_phylo::examples::example_1();
     /// ```
-    #[doc = include_str!("../assets/docs/example_1.md")]
+    #[doc = include_str!("../../assets/docs/example_1.md")]
     ///
     /// ```rust
     /// # let phylo = rebar_phylo::examples::example_1();
@@ -764,7 +765,7 @@ where
     ///
     /// ```rust
     /// use rebar_phylo::Phylogeny;
-    /// let v = vec![("B", "C", 1), ("A", "B", 1)];
+    /// let v = [("B", "C", 1), ("A", "B", 1)];
     /// let phylo = Phylogeny::from(v);
     ///
     /// let mut phylo = Phylogeny::new();
@@ -786,7 +787,7 @@ where
     /// use rebar_phylo::Phylogeny;
     /// use petgraph::graph::NodeIndex;
     ///
-    /// let phylo = Phylogeny::from(vec![("B", "C", 2), ("A", "B", 1)]);
+    /// let phylo = Phylogeny::from([("B", "C", 2), ("A", "B", 1)]);
     /// // "A" is the root, and it was the 3rd node add, with a 0-based index of 2
     /// assert_eq!(phylo.get_root_index()?, NodeIndex::new(2));
     /// # Ok::<(), color_eyre::eyre::Report>(())
@@ -797,7 +798,8 @@ where
     /// ```rust
     /// # use rebar_phylo::Phylogeny;
     /// # use petgraph::graph::NodeIndex;
-    /// let phylo = Phylogeny::from(vec![("B", "C", 2), ("A1", "B", 1), ("A2", "B", 1)]);
+    /// let v = [("B", "C", 2), ("A1", "B", 1), ("A2", "B", 1)];
+    /// let phylo = Phylogeny::from(v);
     /// assert!(phylo.get_root_index().is_err());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
@@ -999,8 +1001,10 @@ where
     }
 }
 
-impl<N, B> From<Vec<(N, N, B)>> for Phylogeny<N, B>
+/// Returns a [`Phylogeny`] created from an iteratable object `I`.
+impl<I, N, B> From<I> for Phylogeny<N, B>
 where
+    I: IntoIterator<Item = (N, N, B)>,
     N: Clone + Debug + Display + Eq + Hash + PartialEq,
     B: AsPrimitive<f32> + Debug + Display,
 {
@@ -1014,10 +1018,10 @@ where
     ///
     /// ```rust
     /// use rebar_phylo::Phylogeny;
-    /// let v = vec![("A", "B", 1), ("A", "C", 3),  ("B", "C", 2) ];
+    /// let v = [("A", "B", 1), ("A", "C", 3),  ("B", "C", 2) ];
     /// let phylo = Phylogeny::from(v);
-    /// # assert_eq!(phylo.get_nodes()?,   vec!["A", "B", "C"].iter().collect::<Vec<_>>());
-    /// # assert_eq!(phylo.get_branches()?, vec![1, 3, 2].iter().collect::<Vec<_>>());
+    /// # assert_eq!(phylo.get_nodes()?,    [&"A", &"B", &"C"]);
+    /// # assert_eq!(phylo.get_branches()?, [&1, &3, &2];
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///
@@ -1039,16 +1043,16 @@ where
     /// ```rust
     /// # // panic test
     /// # use rebar_phylo::Phylogeny;
-    /// let v = vec![("A", "B", 1), ("A", "C", 3),  ("B", "A", 2) ];
+    /// let v = [("A", "B", 1), ("A", "C", 3),  ("B", "A", 2) ];
     /// let result = std::panic::catch_unwind(|| Phylogeny::from(v));
     /// # assert!(result.is_err());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
-    fn from(v: Vec<(N, N, B)>) -> Self {
+    fn from(it: I) -> Self {
         let mut phylogeny = Phylogeny::new();
         let msg = "Failed to convert vector into phylogeny";
         // create initial
-        v.into_iter().for_each(|(p, c, l)| {
+        it.into_iter().for_each(|(p, c, l)| {
             let result = phylogeny.add_branch(p.clone(), c.clone(), l);
             result.expect(msg);
         });
@@ -1071,7 +1075,7 @@ where
     ///
     /// ```rust
     /// use rebar_phylo::Phylogeny;
-    /// let v_in = vec![("A", "B", 1), ("A", "C", 3) ];
+    /// let v_in = [("A", "B", 1), ("A", "C", 3) ];
     /// let phylo = Phylogeny::from(v_in);
     /// let v_out = Vec::from(&phylo);
     /// assert_eq!(v_out, [(&"A", &"B", &1), (&"A", &"C", &3)]);

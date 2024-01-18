@@ -4,8 +4,8 @@ use color_eyre::eyre::{Report, Result};
 //use rebar::dataset;
 //use rebar::{cli, Cli};
 
-#[tokio::main]
-async fn main() -> Result<(), Report> {
+//#[tokio::main]
+fn main() -> Result<(), Report> {
     // use rebar::{phylogeny::Branch, phylogeny::Node, Phylogeny};
     // let node_1 = Node { label: "A" };
     // let node_2 = Node { label: "B" };
