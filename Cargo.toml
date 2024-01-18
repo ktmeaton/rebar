@@ -1,10 +1,6 @@
 [workspace]
 members = [
-    #"rebar",
-    "rebar-cli",
-    "rebar-dataset",
+    "rebar",
     "rebar-phylo",
-    "rebar-table",
-    "rebar-utils",
 ]
 resolver = "2"

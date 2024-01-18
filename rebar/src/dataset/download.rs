@@ -10,6 +10,7 @@ use clap::Parser;
 use color_eyre::eyre::{eyre, Report, Result};
 // use itertools::Itertools;
 use log::{info, warn};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
