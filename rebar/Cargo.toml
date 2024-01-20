@@ -3,45 +3,46 @@ name    = "rebar"
 version = "0.3.0"
 edition = "2021"
 
+[features]
+default  = ["cli", "download", "phylo", "serde"]
+cli      = ["dep:clap", "dep:env_logger"]
+doc      = ["dep:tempfile", "dep:tokio-test"]
+download = ["dep:reqwest", "dep:tempfile", "reqwest/json", "reqwest/default-tls", "serde"]
+native-tls-vendored = ["dep:reqwest", "reqwest/native-tls-vendored"]
+phylo    = ["dep:rebar-phylo"]
+serde    = ["dep:serde", "dep:serde_json", "chrono/serde", "serde/derive", "serde_json/std", "rebar-phylo/serde"]
+
 [dependencies]
-camino          = { version = "1.1.6",   default-features = false, features = ["serde"] }
-chrono          = { version = "0.4.31",  default-features = false, features = ["clock", "serde"] }
+chrono          = { version = "0.4.31",  default-features = false, features = ["clock"] }
 clap            = { version = "4.2.7",   default-features = true,  features = ["derive", "string"], optional = true}
 color-eyre      = { version = "0.6.2",   default-features = false }
 comfy-table     = { version = "7.1.0",   default-features = false }
 # either          = { version = "1.9.0",   default-features = false }
-embed-doc-image = { version = "0.1.4",   default-features = false}
-# env_logger      = { version = "0.10.0",  default-features = false }
+env_logger      = { version = "0.10.0",  default-features = false, optional = true }
 # image           = { version = "0.24.6",  default-features = false }
 # indicatif       = { version = "0.17.5",  default-features = false, features = ["rayon"]}
 # indoc           = { version = "2.0.4",   default-features = false }
 # itertools       = { version = "0.12.0",  default-features = false, features = ["use_std"] }
 log             = { version = "0.4.17",  default-features = false }
 # noodles         = { version = "0.59.0",  default-features = false, features = ["core", "fasta"]}
-# openssl         = { version = "0.10.60", default-features = false, features = ["vendored"]}
+# openssl         = { version = "0.10.60", default-features = false, features = ["vendored"], optional = true}
 # raqote          = { version = "0.8.2",   default-features = false, features = ["png"]}
 # rand            = { version = "0.8.5",   default-features = false, features = ["std", "std_rng"] }
 # rayon           = { version = "1.7.0",   default-features = false }
-rebar-phylo     = { path = "../rebar-phylo", version = "0.3.0", optional = true }
-# reqwest         = { version = "0.11.18", default-features = true,  features = ["json"] }
+rebar-phylo     = { version = "0.3.0",   default-features = false, optional = true, path = "../rebar-phylo" }
+#reqwest         = { version = "0.11.18", default-features = false, features = ["native-tls-vendored"], optional = true }
+reqwest         = { version = "0.11.18", default-features = false, optional = true }
 # rustix          = { version = "0.38.25", default-features = false }
 # rusttype        = { version = "0.9.3",   default-features = false, features = ["std"]}
 semver          = { version = "1.0.19",  default-features = false, features = ["std"] }
-serde           = { version = "1.0.163", default-features = false, features = ["derive"], optional = true }
-serde_json      = { version = "1.0.96",  default-features = false, features = ["std"],    optional = true }
+serde           = { version = "1.0.163", default-features = false, optional = true }
+serde_json      = { version = "1.0.96",  default-features = false, optional = true }
 # structdoc       = { version = "0.1.4",   default-features = false, features = ["structdoc-derive"]}
 strum           = { version = "0.25",    default-features = false, features = ["derive"] }
 tempfile        = { version = "3.8.1",   default-features = false, optional = true }
-# tokio           = { version = "1.28.1",  default-features = false, features = ["macros", "rt-multi-thread"] }
-# zstd            = { version = "0.13.0",  default-features = false }
-
-[features]
-default = ["cli", "doc", "phylo"]
-cli     = ["dep:clap"]
-doc     = ["dep:tempfile"]
-serde   = ["dep:serde", "dep:serde_json"]
-phylo   = ["dep:rebar-phylo"]
-
+tokio           = { version = "1.28.1",  default-features = false, features = ["macros", "rt-multi-thread"] }
+tokio-test      = { version = "0.4.3",   default-features = false, optional = true }
+zstd            = { version = "0.13.0",  default-features = false }
 
 # [dev-dependencies]
 # cargo-llvm-cov    = { version = "0.6.0", default-features = false }
@@ -65,3 +66,13 @@ codegen-units = 1 # Reduce Parallel Code Generation Units to Increase Optimizati
 
 [package.metadata.docs.rs]
 all-features = true
+
+# rust-analyzer settings, one day for: https://github.com/rust-lang/rust-analyzer/issues/6113
+# now just currently for VSCode settings.json
+# [package.metadata.rust-analyzer]
+# "rust-analyzer.server.extraEnv": {
+#     "CARGO_TARGET_DIR": "target/analyzer"
+# },
+# "rust-analyzer.check.extraArgs": [
+#     "--target-dir=target/analyzer"
+# ]

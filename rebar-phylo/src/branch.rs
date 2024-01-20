@@ -1,13 +1,14 @@
 use crate::FromNewick;
-
-use color_eyre::eyre::{eyre, Report, Result, WrapErr};
+use color_eyre::eyre::{Report, Result, WrapErr};
 use num_traits::AsPrimitive;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fmt::{Display, Formatter};
 
 /// A [`Branch`] in the [`Phylogeny`](crate::Phylogeny).
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Branch {
     /// [`Branch`] length (ex. 1.0).
     pub length: f32,
@@ -61,14 +62,14 @@ impl FromNewick for Branch {
         let length = match attributes.len() >= 2 {
             true => attributes[1]
                 .parse()
-                .wrap_err_with(|| eyre!("Failed to parse branch length from newick: {newick}"))?,
+                .wrap_err(format!("Failed to parse branch length from newick: {newick}"))?,
             false => 0.0,
         };
         let confidence = match attributes.len() >= 3 {
             true => {
                 let confidence = attributes[2]
                     .parse()
-                    .wrap_err_with(|| eyre!("Failed to parse confidence from newick: {newick}"))?;
+                    .wrap_err(format!("Failed to parse confidence from newick: {newick}"))?;
                 // if confidence is a decimal, multiple by 100
                 match confidence < 1.0 {
                     true => confidence * 100.0,

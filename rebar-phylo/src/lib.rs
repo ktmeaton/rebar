@@ -1,7 +1,5 @@
 #![doc = include_str!("../README.md")]
-
 use color_eyre::eyre::{Report, Result};
-
 // mod branch;
 mod branch;
 pub mod examples;

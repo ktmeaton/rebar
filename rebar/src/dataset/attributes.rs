@@ -6,12 +6,11 @@ use chrono::{Local, NaiveDate};
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};
 use color_eyre::Help;
 use log::warn;
-use semver::{Version, VersionReq};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::default::Default;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::io::Write;
 use std::str::FromStr;
 use strum::EnumIter;
@@ -33,7 +32,7 @@ use strum::EnumIter;
 /// use rebar::dataset::{Attributes, Name, Tag};
 /// use chrono::NaiveDate;
 ///
-/// let attributes: Attributes<NaiveDate, &str> = Attributes { name: Name::SarsCov2, tag:  Tag::Nightly, .. Default::default()};
+/// let attributes: Attributes<NaiveDate, &str> = Attributes { name: Name::SarsCov2, tag:  Tag::Latest, .. Default::default()};
 /// ```
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -175,7 +174,7 @@ pub enum Name {
     Custom,
 }
 
-impl Display for Name {
+impl std::fmt::Display for Name {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let name = match self {
             Name::SarsCov2 => String::from("sars-cov-2"),
@@ -215,38 +214,6 @@ impl FromStr for Name {
     }
 }
 
-impl Name {
-    /// Returns the [`Compatibility`] of a named [`Dataset`].
-    ///
-    ///  ## Examples
-    ///
-    /// ```
-    /// use rebar::dataset::{Compatibility, Name};
-    /// use chrono::NaiveDate;
-    ///
-    /// Name::SarsCov2.get_compatibility::<NaiveDate>()?;
-    /// Name::Toy1.get_compatibility::<NaiveDate>()?;
-    /// Name::Custom.get_compatibility::<NaiveDate>()?;
-    /// # Ok::<(), color_eyre::eyre::Report>(())
-    /// ```
-    pub fn get_compatibility<D>(&self) -> Result<Compatibility<D>, Report>
-    where
-        D: std::convert::From<NaiveDate>,
-    {
-        let mut compatibility: Compatibility<D> = Compatibility::new();
-        #[allow(clippy::single_match)]
-        match self {
-            Name::SarsCov2 => {
-                compatibility.min_date =
-                    Some(NaiveDate::parse_from_str("2023-02-09", "%Y-%m-%d")?.into());
-            }
-            Name::Toy1 => compatibility.cli_version = Some(">=0.2.0".to_string()),
-            _ => compatibility.cli_version = Some(">=1.0.0".to_string()),
-        }
-        Ok(compatibility)
-    }
-}
-
 // ----------------------------------------------------------------------------
 // Dataset Tag
 // ----------------------------------------------------------------------------
@@ -260,9 +227,9 @@ pub enum Tag {
     /// For a [`Dataset`] where files were downloaded from the latest possible available.
     ///
     /// ```rust
-    /// let tag = rebar::dataset::Tag::Nightly;
+    /// let tag = rebar::dataset::Tag::Latest;
     /// ```
-    Nightly,
+    Latest,
     /// For a [`Dataset`] that has at least one file that is version-controlled or date-controlled.
     /// For example, source files downloaded from GitHub repositories.
     ///
@@ -286,7 +253,7 @@ impl std::fmt::Display for Tag {
     /// Test
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let tag = match self {
-            Tag::Nightly => String::from("nightly"),
+            Tag::Latest => String::from("latest"),
             Tag::Archive(tag) => tag.to_owned(),
             Tag::Custom => String::from("custom"),
         };
@@ -301,7 +268,7 @@ impl FromStr for Tag {
     /// Returns a [`Dataset`] [`Tag`] converted from a [`str`].
     fn from_str(tag: &str) -> Result<Tag, Report> {
         let tag = match tag {
-            "nightly" => Tag::Nightly,
+            "latest" => Tag::Latest,
             "custom" => Tag::Custom,
             _ => {
                 // check if it's an archival date string
@@ -323,6 +290,37 @@ impl FromStr for Tag {
 // ----------------------------------------------------------------------------
 // Dataset Compatibility
 
+/// Returns the [`Compatibility`] of a named [`Dataset`].
+///
+///  ## Examples
+///
+/// ```
+/// use rebar::dataset::{get_compatibility, Name};
+/// use chrono::NaiveDate;
+///
+/// get_compatibility::<NaiveDate>(&Name::SarsCov2)?;
+/// get_compatibility::<NaiveDate>(&Name::Toy1)?;
+/// get_compatibility::<NaiveDate>(&Name::Custom)?;
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// ```
+pub fn get_compatibility<D>(name: &Name) -> Result<Compatibility<D>, Report>
+where
+    D: std::convert::From<NaiveDate>,
+{
+    let mut compatibility: Compatibility<D> = Compatibility::new();
+    #[allow(clippy::single_match)]
+    match name {
+        Name::SarsCov2 => {
+            compatibility.min_date =
+                Some(NaiveDate::parse_from_str("2023-02-09", "%Y-%m-%d")?.into());
+        }
+        Name::Toy1 => compatibility.cli_version = Some(">=0.2.0".to_string()),
+        //Name::Custom => compatibility.cli_version = Some(">=0.3.0".to_string()),
+        _ => compatibility.cli_version = None,
+    }
+    Ok(compatibility)
+}
+
 /// Returns true if the [`Dataset`] [`Name`] and [`Tag`] are compatible with each other, and the CLI version.
 ///
 /// ## Examples
@@ -331,51 +329,66 @@ impl FromStr for Tag {
 /// use rebar::dataset::{is_compatible, Name, Tag};
 /// use std::str::FromStr;
 ///
-/// assert_eq!(true,  is_compatible(&Name::SarsCov2, &Tag::Nightly)?);
-/// assert_eq!(true,  is_compatible(&Name::SarsCov2, &Tag::from_str("2023-06-06")?)?);
-/// assert_eq!(false, is_compatible(&Name::SarsCov2, &Tag::from_str("2023-01-01")?)?);
+/// assert_eq!(true,  is_compatible(Some(&Name::SarsCov2), Some(&Tag::Latest))?);
+/// assert_eq!(true,  is_compatible(Some(&Name::SarsCov2), Some(&Tag::from_str("2023-06-06")?))?);
+/// assert_eq!(false, is_compatible(Some(&Name::SarsCov2), Some(&Tag::from_str("2023-01-01")?))?);
+/// assert_eq!(true,  is_compatible(Some(&Name::Toy1),     None)?);
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
-pub fn is_compatible(name: &Name, tag: &Tag) -> Result<bool, Report> {
-    let compatibility = name.get_compatibility()?;
+pub fn is_compatible(name: Option<&Name>, tag: Option<&Tag>) -> Result<bool, Report> {
+    let compatibility = match name {
+        Some(name) => get_compatibility(name)?,
+        None => Compatibility::default(),
+    };
 
     // Check CLI Version
     if let Some(cli_version) = compatibility.cli_version {
-        let current_version = Version::parse(env!("CARGO_PKG_VERSION"))?;
-        let required_version = VersionReq::parse(&cli_version)?;
+        let current_version = semver::Version::parse(env!("CARGO_PKG_VERSION"))?;
+        let required_version = semver::VersionReq::parse(&cli_version)?;
         if !required_version.matches(&current_version) {
             warn!(
                 "CLI version incompatibility.
-                Current version {current_version} does not satisfy the {name} dataset requirement {required_version}",
+                Current version {current_version} does not satisfy the required version {required_version}",
                 current_version=current_version.to_string()
                 );
             return Ok(false);
         }
     }
-    // Check Tag Dates
-    if matches!(tag, Tag::Archive(_)) {
-        let tag_date = NaiveDate::parse_from_str(&tag.to_string(), "%Y-%m-%d")?;
-
-        // Minimum Date
-        if let Some(min_date) = compatibility.min_date {
-            if tag_date < min_date {
+    // Check Tag
+    match tag {
+        Some(Tag::Latest) => {
+            if let Some(max_date) = compatibility.max_date {
                 warn!(
                     "Date incompatibility.
-                    Tag {tag_date:?} does not satisfy the {name} dataset minimum date {min_date:?}"
+                Tag {tag:?} does not satisfy the maximum date {max_date:?}"
                 );
                 return Ok(false);
             }
         }
-        // Maximum Date
-        if let Some(max_date) = compatibility.max_date {
-            if tag_date > max_date {
-                warn!(
-                    "Date incompatibility.
-                    Tag {tag_date:?} does not satisfy the {name} dataset maximum date {max_date:?}"
-                );
-                return Ok(false);
+        Some(Tag::Archive(s)) => {
+            let tag_date = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")?;
+            // tag date is too early
+            if let Some(min_date) = compatibility.min_date {
+                if tag_date < min_date {
+                    warn!(
+                        "Date incompatibility.
+                        Tag {tag_date:?} does not satisfy the minimum date {min_date:?}"
+                    );
+                    return Ok(false);
+                }
+            }
+            // tag date is too late
+            if let Some(max_date) = compatibility.max_date {
+                if tag_date > max_date {
+                    warn!(
+                        "Date incompatibility.
+                    Tag {tag_date:?} does not satisfy the maximum date {max_date:?}"
+                    );
+                    return Ok(false);
+                }
             }
         }
+        _ => (),
     }
 
     Ok(true)

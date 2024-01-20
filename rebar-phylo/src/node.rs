@@ -1,6 +1,6 @@
 use crate::FromNewick;
-
 use color_eyre::eyre::{eyre, Report, Result};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fmt::{Display, Formatter};
@@ -8,7 +8,8 @@ use std::hash::Hash;
 use std::str::FromStr;
 
 /// A [`Node`] in the [`Phylogeny`](crate::Phylogeny) graph.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Node<N> {
     /// [`Node`] label for display.
     pub label: N,

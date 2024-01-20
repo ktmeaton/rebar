@@ -1,6 +1,6 @@
 // //! Command-line interface (CLI) for Dataset [Commands](Command).
 
-use crate::dataset::list;
+use crate::dataset::ListArgs;
 use clap::{Parser, Subcommand};
 // use rebar_dataset::{download, list};
 #[cfg(feature = "serde")]
@@ -34,7 +34,7 @@ pub enum Command {
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     #[clap(about = "List datasets.")]
-    List(list::Args),
+    List(ListArgs),
     // /// Pass CLI arguments to the dataset [download](crate::dataset::download()) method.
     // /// <br>
     // /// ```rust

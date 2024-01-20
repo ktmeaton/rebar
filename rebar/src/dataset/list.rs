@@ -1,6 +1,7 @@
 //! List available datasets for download.
 
-use crate::dataset::{Compatibility, Name};
+use crate::dataset::{get_compatibility, is_compatible, Compatibility, Name, Tag};
+#[cfg(feature = "cli")]
 use clap::Parser;
 use color_eyre::eyre::{Report, Result};
 use comfy_table::Table;
@@ -11,63 +12,87 @@ use strum::IntoEnumIterator;
 // ----------------------------------------------------------------------------
 // Structs
 
-/// Arguments for list datasets.
-#[derive(Debug, Parser)]
+/// Arguments for listing datasets available for download.
+#[derive(Debug)]
+#[cfg_attr(feature = "cli", derive(Parser))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[clap(verbatim_doc_comment)]
-pub struct Args {
-    /// Dataset name.
-    #[clap(short = 'n', long)]
+pub struct ListArgs {
+    /// [`Dataset`] [`Name`].
+    #[cfg_attr(feature = "cli", clap(short = 'n', long))]
     pub name: Option<Name>,
+    /// [`Dataset`] [`Tag`].
+    #[cfg_attr(feature = "cli", clap(short = 't', long))]
+    pub tag: Option<Tag>,
 }
 
-impl Default for Args {
+impl Default for ListArgs {
     fn default() -> Self {
-        Args::new()
+        ListArgs::new()
     }
 }
-impl Args {
+impl ListArgs {
     pub fn new() -> Self {
-        Args { name: None }
+        ListArgs { name: None, tag: None }
     }
 }
 
 // ----------------------------------------------------------------------------
 // Functions
 
-/// List datasets available for download.
-pub fn list(args: &Args) -> Result<Table, Report> {
+/// Returns a [`Table`] of datasets available for download.
+///
+/// ## Arguments
+///
+/// - `args` - [`ListArgs`] to use for listing available datasets.
+///
+/// ## Examples
+///
+/// ```rust
+/// use rebar::dataset::{list, ListArgs, Name, Tag};
+/// use std::str::FromStr;
+///
+/// let table = list(&ListArgs::default())?;
+/// let table = list(&ListArgs { name: Some(Name::SarsCov2), tag: None })?;
+/// let table = list(&ListArgs { name: None,                 tag: Some(Tag::Latest) })?;
+/// let table = list(&ListArgs { name: None,                 tag: Some(Tag::from_str("2023-01-01")?) })?;
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// ```
+pub fn list(args: &ListArgs) -> Result<Table, Report> {
     // table of name, tag, cli_version
     let mut table = Table::new();
     table.set_header(vec!["Name", "CLI Version", "Minimum Tag Date", "Maximum Tag Date"]);
 
-    for name in Name::iter() {
-        // Check if this was not the name requested by CLI args
-        if let Some(args_name) = &args.name {
-            if &name != args_name {
-                continue;
-            }
-        }
+    // Check all named datasets
+    Name::iter()
+        // check args name
+        .filter(|name| match args.name {
+            Some(args_name) => args_name == *name,
+            None => true,
+        })
+        // check compatibility
+        .filter(|name| is_compatible(Some(name), args.tag.as_ref()).unwrap_or(false))
+        .try_for_each(|name| {
+            let c: Compatibility<chrono::NaiveDate> = get_compatibility(&name)?;
 
-        // Extract compatibility attributes
-        let compatibility: Compatibility<chrono::NaiveDate> = name.get_compatibility()?;
+            let cli_version = match c.cli_version {
+                Some(v) => v.to_string(),
+                None => "".to_string(),
+            };
 
-        let cli_version = compatibility.cli_version.unwrap_or_default();
-        let min_date = match compatibility.min_date {
-            Some(date) => date.to_string(),
-            None => "nightly".to_string(),
-        };
-        let max_date = match compatibility.max_date {
-            Some(date) => date.to_string(),
-            None => "nightly".to_string(),
-        };
+            let min_date = match c.min_date {
+                Some(date) => date.to_string(),
+                None => "".to_string(),
+            };
+            let max_date = match c.max_date {
+                Some(date) => date.to_string(),
+                None => "".to_string(),
+            };
 
-        // Add to row
-        let row = vec![name.to_string(), cli_version.to_string(), min_date, max_date];
-        table.add_row(row);
-    }
+            let row = vec![name.to_string(), cli_version, min_date, max_date];
+            table.add_row(row);
 
-    println!("{table}");
+            Ok::<(), Report>(())
+        })?;
 
     Ok(table)
 }

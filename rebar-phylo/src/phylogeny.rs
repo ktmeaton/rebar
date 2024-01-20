@@ -1,5 +1,4 @@
 use crate::{newick, FromNewick, ToMermaid};
-
 use color_eyre::eyre::{eyre, Report, Result};
 use itertools::Itertools;
 use num_traits::AsPrimitive;
@@ -8,6 +7,7 @@ use petgraph::dot::{Config, Dot};
 use petgraph::graph::{EdgeIndex, EdgeReference, Graph, NodeIndex};
 use petgraph::visit::{Dfs, EdgeRef, IntoNodeReferences};
 use petgraph::Direction;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::From;
@@ -26,7 +26,8 @@ use std::hash::Hash;
 ///
 #[doc = include_str!("../../assets/docs/example_1.md")]
 ///
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct Phylogeny<N, B> {
     /// Ancestral recombination graph (ARG) of populations as a directed graph of parents and children.
     ///
@@ -248,7 +249,7 @@ where
 
         // check if edge introduced a cycle
         if is_cyclic_directed(&self.graph) {
-            Err(eyre!("New edge between {source} and {target} introduced a cycle."))?
+            Err(eyre!("New edge between {source} and {target} introduced a cycle."))?;
         }
 
         Ok(edge_index)
@@ -1021,7 +1022,7 @@ where
     /// let v = [("A", "B", 1), ("A", "C", 3),  ("B", "C", 2) ];
     /// let phylo = Phylogeny::from(v);
     /// # assert_eq!(phylo.get_nodes()?,    [&"A", &"B", &"C"]);
-    /// # assert_eq!(phylo.get_branches()?, [&1, &3, &2];
+    /// # assert_eq!(phylo.get_branches()?, [&1, &3, &2]);
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     ///

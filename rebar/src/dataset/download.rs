@@ -1,121 +1,147 @@
 //! Download an available dataset.
 
-use crate::dataset::attributes::{is_compatible, Name, Summary, Tag};
-// use crate::dataset::{sarscov2, toy1, Dataset};
-use crate::dataset::{toy1, Dataset};
-//use crate::Table;
-// use crate::{dataset, dataset::load};
-use crate::{utils, utils::remote_file::RemoteFile};
+use crate::dataset::{is_compatible, Name, Tag};
+use crate::Dataset;
+
+#[cfg(feature = "cli")]
 use clap::Parser;
 use color_eyre::eyre::{eyre, Report, Result};
-// use itertools::Itertools;
 use log::{info, warn};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::fs::create_dir_all;
-use std::path::{Path, PathBuf};
-use structdoc::StructDoc;
+use std::default::Default;
+use std::fmt::Debug;
+use std::path::PathBuf;
 
 /// Download dataset arguments.
-#[derive(Parser, Debug, Deserialize, Serialize, StructDoc)]
-#[clap(verbatim_doc_comment)]
-pub struct Args {
-    /// Dataset name.
-    #[clap(short = 'r', long, required = true)]
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "cli", derive(Parser))]
+pub struct DownloadArgs {
+    /// [`Dataset`] [`Name`].
+    #[cfg_attr(feature = "cli", clap(short = 'r', long, required = true))]
     pub name: Name,
 
-    /// Dataset tag.
+    /// [`Dataset`] version [`Tag`].
     ///
-    /// A date (YYYY-MM-DD), 'nightly', or 'custom'
-    #[clap(short = 't', long, required = true)]
+    /// A date (YYYY-MM-DD), 'latest', or 'custom'
+    #[cfg_attr(feature = "cli", clap(short = 't', long, required = true))]
     pub tag: Tag,
 
     /// Output directory.
     ///
     /// If the directory does not exist, it will be created.
-    #[clap(short = 'o', long, required = true)]
+    #[cfg_attr(feature = "cli", clap(short = 'o', long, required = true))]
     pub output_dir: PathBuf,
 
-    /// Download dataset from a [Summary] JSON [snapshot].
-    #[clap(short = 's', long)]
-    #[clap(help = "Download dataset from a Summary JSON.")]
-    pub summary: Option<PathBuf>,
+    /// Download [`Dataset`] from an [`Attributes`] JSON [`snapshot`].
+    #[cfg_attr(feature = "cli", clap(short = 's', long, required = true))]
+    #[cfg_attr(feature = "cli", clap(help = "Download dataset from a Summary JSON."))]
+    pub attributes: Option<PathBuf>,
 }
 
-impl Default for Args {
+impl Default for DownloadArgs {
     fn default() -> Self {
-        Args::new()
+        DownloadArgs::new()
     }
 }
-impl Args {
+impl DownloadArgs {
     pub fn new() -> Self {
-        Args {
+        DownloadArgs {
             name: Name::default(),
             tag: Tag::default(),
             output_dir: PathBuf::new(),
-            summary: None,
+            attributes: None,
         }
     }
 }
 
-/// Download dataset
-pub async fn download(args: &Args) -> Result<Dataset, Report> {
+/// Download a [`Dataset`].
+///
+/// ## Arguments
+///
+/// - `args` - [`DownloadArgs`] to use for downloading available datasets.
+///
+/// ## Examples
+///
+/// ```rust
+/// use rebar::dataset::*;
+/// use std::path::PathBuf;
+/// # use tokio_test::{assert_ok, block_on};
+///
+/// let args = DownloadArgs {name: Name::Toy1, tag: Tag::Custom, output_dir: PathBuf::from("test/dataset/toy1"), attributes: None };
+/// # assert_ok!(block_on(async {
+/// let output = "test/utils/download_file/reference.fasta";
+/// let dataset: Dataset<chrono::NaiveDate, &str> = download(&args).await?;
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// # }));
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// ```
+pub async fn download<D, P>(args: &DownloadArgs) -> Result<Dataset<D, P>, Report> {
     info!("Downloading dataset: {} {}", &args.name, &args.tag);
 
     let dataset = Dataset::new();
 
     // --------------------------------------------------------------------
-    // Optional Input Summary Snapshot
+    // Optional Input Attributes
 
-    let mut summary: Summary = if let Some(summary_path) = &args.summary {
-        info!("Importing summary: {summary_path:?}");
-        let summary = Summary::read(summary_path)?;
+    // let mut attributes: Attributes<chrono::NaiveDate, PathBuf> = match cfg!(serde) {
+    //     true  => match &args.attributes {
+    //         #[cfg(serde = true)]
+    //         Some(path) => Attributes::read(path)?,
+    //         _ => Attributes { name: args.name, tag: args.tag.clone(), .. Default::default() },
+    //     },
+    //     false => Attributes { name: args.name, tag: args.tag.clone(), .. Default::default() },
+    // };
 
-        // Warn if summary conflicts with any CLI args
-        if summary.name != args.name || summary.tag != args.tag {
-            warn!("Dataset has been changed by summary to: {} {}", &summary.name, &summary.tag);
-        }
-        summary
-    } else {
-        let mut summary = Summary::new();
-        summary.name = args.name;
-        summary.tag = args.tag.clone();
-        summary
-    };
+    // if let Some(path) = &args.attributes {
+    //     info!("Importing Attributes: {path:?}");
+    //     let attributes = Attributes::read(path)?;
+
+    //     // Warn if attributes conflict with any CLI args
+    //     if attributes.name != args.name || attributes.tag != args.tag {
+    //         warn!("Dataset has been changed by Attributes to: {} {}", &attributes.name, &attributes.tag);
+    //     }
+    //     attributes
+    // } else {
+    //     Attributes { name: args.name, tag: args.tag.clone(), .. Default::default() }
+    // };
 
     // --------------------------------------------------------------------
     // Compatibility Check
 
-    if !is_compatible(&args.name, &args.tag)? {
+    if !is_compatible(Some(&args.name), Some(&args.tag))? {
         Err(eyre!("Dataset incompatibility"))?;
     }
 
     // Warn if the directory already exists
     if !args.output_dir.exists() {
         info!("Creating output directory: {:?}", &args.output_dir);
-        create_dir_all(&args.output_dir)?;
+        std::fs::create_dir_all(&args.output_dir)?;
     } else {
         warn!("Proceed with caution! --output-dir {:?} already exists.", args.output_dir);
     }
 
-    // --------------------------------------------------------------------
-    // Reference
+    // // --------------------------------------------------------------------
+    // // Reference
 
-    let output_path = args.output_dir.join("reference.fasta");
-    info!("Downloading reference: {output_path:?}");
+    // let output_path = args.output_dir.join("reference.fasta");
+    // info!("Downloading reference: {output_path:?}");
 
-    summary.reference = if args.summary.is_some() {
-        match summary.reference {
-            Some(remote_file) => snapshot(&remote_file, &output_path).await.ok(),
-            None => None,
-        }
-    } else {
-        match args.name {
-            //Name::SarsCov2 => sarscov2::download::reference(&args.tag, &output_path).await?,
-            Name::Toy1 => toy1::download::reference(&args.tag, &output_path).ok(),
-            _ => todo!(),
-        }
-    };
+    // attributes.reference = if args.attributes.is_some() {
+    //     match attributes.reference {
+    //         //Some(remote_file) => snapshot(&remote_file, &output_path).await.ok(),
+    //         //todo!()
+    //         Some(remote_file) => None,
+    //         None => None,
+    //     }
+    // } else {
+    //     match args.name {
+    //         //Name::SarsCov2 => sarscov2::download::reference(&args.tag, &output_path).await?,
+    //         Name::Toy1 => toy1::download::reference(&args.tag, &output_path).ok(),
+    //         _ => todo!(),
+    //     }
+    // };
 
     // // --------------------------------------------------------------------
     // // Populations
@@ -237,18 +263,91 @@ pub async fn download(args: &Args) -> Result<Dataset, Report> {
     Ok(dataset)
 }
 
-/// Download remote file from a summary snapshot.
-pub async fn snapshot(snapshot: &RemoteFile, output_path: &Path) -> Result<RemoteFile, Report> {
-    // Check extension for decompression
-    let ext = utils::path_to_ext(Path::new(&snapshot.url))?;
-    let decompress = ext == "zst";
+// ----------------------------------------------------------------------------
+// Remote File
+// ----------------------------------------------------------------------------
 
-    // Update the local path to the desired output
-    let mut remote_file = snapshot.clone();
-    remote_file.local_path = output_path.to_path_buf();
-
-    // Download the file
-    utils::download_file(&snapshot.url, output_path, decompress).await?;
-
-    Ok(remote_file)
+/// A file downloaded from a remote URL.
+///
+/// ## Generics
+///
+/// - `D` - Date, recommended [`chrono::NaiveDate`].
+/// - `P` - File path.
+///
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct RemoteFile<D, P> {
+    /// File URL
+    pub url: P,
+    // Github commit SHA hash
+    pub sha: String,
+    // Local path of the file.
+    pub local_path: P,
+    // Date the file was created.
+    pub date_created: D,
+    // Date the file was downloaded.
+    pub date_downloaded: D,
 }
+
+impl<D, P> Default for RemoteFile<D, P>
+where
+    D: Default,
+    P: Default,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<D, P> RemoteFile<D, P>
+where
+    D: Default,
+    P: Default,
+{
+    pub fn new() -> Self {
+        RemoteFile {
+            url: P::default(),
+            sha: String::new(),
+            local_path: P::default(),
+            date_created: D::default(),
+            date_downloaded: D::default(),
+        }
+    }
+}
+
+// /// Download from a [`RemoteFile`].
+// ///
+// /// ## Arguments
+// ///
+// /// ## Examples
+// ///
+// /// ```rust
+// /// # use tokio_test::{block_on, assert_ok};
+// /// use rebar::dataset::{download_remote_file, RemoteFile};
+// /// let remote_file = RemoteFile {url:  .. Default::default()};
+// /// # assert_ok!(block_on(async {
+// /// download_remote_file()
+// /// # Ok::<(), color_eyre::eyre::Report>(())
+// /// # }));
+// /// # Ok::<(), color_eyre::eyre::Report>(())
+// /// ```
+// pub async fn download_remote_file<D, P>(
+//     remote_file: &RemoteFile<D, P>,
+//     output_path: &P,
+// ) -> Result<(), Report>
+// where
+//     P: AsRef<std::path::Path> + Debug,
+// {
+//     // Check extension for decompression
+//     //let ext = utils::get_extension(&remote_file.url)?;
+//     //let decompress = ext == "zst";
+
+//     // Update the local path to the desired output
+//     //let mut remote_file = remote_file.clone();
+//     //remote_file.local_path = output_path.into();
+
+//     // utils::download_file(&snapshot.url, output_path, decompress).await?;
+
+//     // Ok(remote_file)
+//     Ok(())
+// }

@@ -1,65 +1,65 @@
 //! Downloading, loading, and manipulating of the [Dataset].
 
 mod attributes;
-pub mod list;
-mod remote_file;
-// pub mod download;
-// //pub mod list;
+mod download;
+mod list;
+//pub mod list;
 // pub mod toy1;
 
 #[doc(inline)]
-pub use attributes::{is_compatible, Attributes, Compatibility, Name, Tag};
-// #[doc(inline)]
-// pub use crate::dataset::download::download;
+pub use attributes::{get_compatibility, is_compatible, Attributes, Compatibility, Name, Tag};
 #[doc(inline)]
-pub use crate::dataset::remote_file::RemoteFile;
+pub use download::{download, DownloadArgs, RemoteFile};
 #[doc(inline)]
-pub use list::list;
+pub use list::{list, ListArgs};
 
-// use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 
 // // ----------------------------------------------------------------------------
 // // Dataset
 
-// /// A collection of parent population sequences aligned to a reference.
-// #[derive(Debug, Deserialize, PartialEq, Serialize)]
-// pub struct Dataset {
-//     /// Summary of dataset attributes.
-//     pub summary: attributes::Summary,
-//     // /// Reference sequence record, with sequence bases kept
-//     // pub reference: sequence::Record,
-//     // /// Dataset populations, map of names to sequences.
-//     // pub populations: BTreeMap<String, sequence::Record>,
-//     // /// Dataset mutations, map of substitutions to named sequences.
-//     // pub mutations: BTreeMap<sequence::Substitution, Vec<String>>,
-//     // /// Phylogenetic representation, as an ancestral recombination graph (ARG)
-//     // pub phylogeny: Phylogeny<String>,
-//     // /// Edge cases of problematic populations
-//     // pub edge_cases: Vec<run::Args>,
-// }
+/// A collection of parent population sequences aligned to a reference.
+#[derive(Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+pub struct Dataset<D, P> {
+    /// [`Dataset`] [`Attributes`].
+    pub attributes: Attributes<D, P>,
+    // /// Reference sequence record, with sequence bases kept
+    // pub reference: sequence::Record,
+    // /// Dataset populations, map of names to sequences.
+    // pub populations: BTreeMap<String, sequence::Record>,
+    // /// Dataset mutations, map of substitutions to named sequences.
+    // pub mutations: BTreeMap<sequence::Substitution, Vec<String>>,
+    // /// Phylogenetic representation, as an ancestral recombination graph (ARG)
+    // pub phylogeny: Phylogeny<String>,
+    // /// Edge cases of problematic populations
+    // pub edge_cases: Vec<run::Args>,
+}
 
-// impl std::fmt::Display for Dataset {
-//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-//         write!(f, "name: {}, tag: {}", self.summary.name, self.summary.tag)
-//     }
-// }
+impl<D, P> Display for Dataset<D, P> {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "name: {}, tag: {}", self.attributes.name, self.attributes.tag)
+    }
+}
 
-// impl Default for Dataset {
-//     fn default() -> Self {
-//         Self::new()
-//     }
-// }
+impl<D, P> Default for Dataset<D, P> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-// impl Dataset {
-//     /// Create a new dataset.
-//     pub fn new() -> Self {
-//         Dataset {
-//             summary: attributes::Summary::new(),
-//             // reference: sequence::Record::new(),
-//             // populations: BTreeMap::new(),
-//             // mutations: BTreeMap::new(),
-//             // phylogeny: Phylogeny::new(),
-//             // edge_cases: Vec::new(),
-//         }
-//     }
-// }
+impl<D, P> Dataset<D, P> {
+    /// Create a new dataset.
+    pub fn new() -> Self {
+        Dataset {
+            attributes: Attributes::default(),
+            // reference: sequence::Record::new(),
+            // populations: BTreeMap::new(),
+            // mutations: BTreeMap::new(),
+            // phylogeny: Phylogeny::new(),
+            // edge_cases: Vec::new(),
+        }
+    }
+}
