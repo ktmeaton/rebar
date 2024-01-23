@@ -1,6 +1,7 @@
 //! Download an available dataset.
 
-use crate::dataset::{is_compatible, Name, Tag};
+use crate::dataset::{is_compatible, toy1, Attributes, Name, Tag, VersionedFile};
+use crate::utils;
 use crate::Dataset;
 
 #[cfg(feature = "cli")]
@@ -11,7 +12,7 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fmt::Debug;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Download dataset arguments.
 #[derive(Debug)]
@@ -35,7 +36,7 @@ pub struct DownloadArgs {
     pub output_dir: PathBuf,
 
     /// Download [`Dataset`] from an [`Attributes`] JSON [`snapshot`].
-    #[cfg_attr(feature = "cli", clap(short = 's', long, required = true))]
+    #[cfg_attr(feature = "cli", clap(short = 's', long, required = false))]
     #[cfg_attr(feature = "cli", clap(help = "Download dataset from a Summary JSON."))]
     pub attributes: Option<PathBuf>,
 }
@@ -71,13 +72,35 @@ impl DownloadArgs {
 ///
 /// let args = DownloadArgs {name: Name::Toy1, tag: Tag::Custom, output_dir: PathBuf::from("test/dataset/toy1"), attributes: None };
 /// # assert_ok!(block_on(async {
-/// let output = "test/utils/download_file/reference.fasta";
-/// let dataset: Dataset<chrono::NaiveDate, &str> = download(&args).await?;
+/// let dataset = download(&args).await?;
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// # }));
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
-pub async fn download<D, P>(args: &DownloadArgs) -> Result<Dataset<D, P>, Report> {
+///
+/// ```rust
+/// // todo!() make this with sarscov2
+/// // create an attributes JSON
+/// # use rebar::dataset::*;
+/// # use std::path::PathBuf;
+/// # use tokio_test::{assert_ok, block_on};
+/// use chrono::NaiveDate;
+/// let attributes = Attributes { name: Name::Toy1, tag: Tag::Custom, .. Default::default() };
+/// let output_dir = PathBuf::from("test/dataset/toy1");
+/// let attributes_path = output_dir.join("attributes.json");
+/// attributes.write(&attributes_path)?;
+/// let attributes = Some(attributes_path);
+///
+/// // download dataset from attributes JSON
+/// let args = DownloadArgs {name: Name::Toy1, tag: Tag::Custom, output_dir, attributes };
+/// # assert_ok!(block_on(async {
+/// let dataset = download(&args).await?;
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// # }));
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// ```
+#[cfg(feature = "download")]
+pub async fn download(args: &DownloadArgs) -> Result<Dataset, Report> {
     info!("Downloading dataset: {} {}", &args.name, &args.tag);
 
     let dataset = Dataset::new();
@@ -85,32 +108,26 @@ pub async fn download<D, P>(args: &DownloadArgs) -> Result<Dataset<D, P>, Report
     // --------------------------------------------------------------------
     // Optional Input Attributes
 
-    // let mut attributes: Attributes<chrono::NaiveDate, PathBuf> = match cfg!(serde) {
-    //     true  => match &args.attributes {
-    //         #[cfg(serde = true)]
-    //         Some(path) => Attributes::read(path)?,
-    //         _ => Attributes { name: args.name, tag: args.tag.clone(), .. Default::default() },
-    //     },
-    //     false => Attributes { name: args.name, tag: args.tag.clone(), .. Default::default() },
-    // };
-
-    // if let Some(path) = &args.attributes {
-    //     info!("Importing Attributes: {path:?}");
-    //     let attributes = Attributes::read(path)?;
-
-    //     // Warn if attributes conflict with any CLI args
-    //     if attributes.name != args.name || attributes.tag != args.tag {
-    //         warn!("Dataset has been changed by Attributes to: {} {}", &attributes.name, &attributes.tag);
-    //     }
-    //     attributes
-    // } else {
-    //     Attributes { name: args.name, tag: args.tag.clone(), .. Default::default() }
-    // };
+    let mut attributes = match &args.attributes {
+        Some(path) => {
+            info!("Importing Attributes: {path:?}");
+            let attributes = Attributes::read(path)?;
+            // Warn if attributes conflict with any CLI args
+            if attributes.name != args.name || attributes.tag != args.tag {
+                warn!(
+                    "Dataset has been changed by Attributes to: {} {}",
+                    &attributes.name, &attributes.tag
+                );
+            }
+            attributes
+        }
+        _ => Attributes { name: args.name, tag: args.tag.clone(), ..Default::default() },
+    };
 
     // --------------------------------------------------------------------
     // Compatibility Check
 
-    if !is_compatible(Some(&args.name), Some(&args.tag))? {
+    if !is_compatible(Some(&attributes.name), Some(&attributes.tag))? {
         Err(eyre!("Dataset incompatibility"))?;
     }
 
@@ -122,55 +139,58 @@ pub async fn download<D, P>(args: &DownloadArgs) -> Result<Dataset<D, P>, Report
         warn!("Proceed with caution! --output-dir {:?} already exists.", args.output_dir);
     }
 
-    // // --------------------------------------------------------------------
-    // // Reference
+    // --------------------------------------------------------------------
+    // Reference
 
-    // let output_path = args.output_dir.join("reference.fasta");
-    // info!("Downloading reference: {output_path:?}");
+    info!("Downloading reference.");
 
-    // attributes.reference = if args.attributes.is_some() {
-    //     match attributes.reference {
-    //         //Some(remote_file) => snapshot(&remote_file, &output_path).await.ok(),
-    //         //todo!()
-    //         Some(remote_file) => None,
-    //         None => None,
-    //     }
-    // } else {
-    //     match args.name {
-    //         //Name::SarsCov2 => sarscov2::download::reference(&args.tag, &output_path).await?,
-    //         Name::Toy1 => toy1::download::reference(&args.tag, &output_path).ok(),
-    //         _ => todo!(),
-    //     }
-    // };
+    // Select downloading from versioned file or internal function
+    let reference =
+        if attributes.reference.is_some() && attributes.reference.clone().unwrap().url.is_some() {
+            download_versioned_file(attributes.reference.unwrap(), &args.output_dir).await?
+        } else {
+            match args.name {
+                Name::Toy1 => toy1::reference(&attributes.tag, &args.output_dir)?,
+                _ => todo!(),
+            }
+        };
+    attributes.reference = Some(reference);
 
-    // // --------------------------------------------------------------------
-    // // Populations
+    // --------------------------------------------------------------------
+    // Populations
 
-    // let output_path = args.output_dir.join("populations.fasta");
-    // info!("Downloading populations: {output_path:?}");
+    info!("Downloading populations.");
 
-    // summary.populations = if args.summary.is_some() {
-    //     dataset::download::snapshot(&summary.populations, &output_path).await?
-    // } else {
-    //     match args.name {
-    //         Name::SarsCov2 => sarscov2::download::populations(&args.tag, &output_path).await?,
-    //         Name::Toy1 => toy1::download::populations(&args.tag, &output_path)?,
-    //         _ => todo!(),
-    //     }
-    // };
+    // Select downloading from versioned file or internal function
+    let populations = if attributes.populations.is_some()
+        && attributes.populations.clone().unwrap().url.is_some()
+    {
+        download_versioned_file(attributes.populations.unwrap(), &args.output_dir).await?
+    } else {
+        match args.name {
+            Name::Toy1 => toy1::populations(&attributes.tag, &args.output_dir)?,
+            _ => todo!(),
+        }
+    };
+    attributes.populations = Some(populations);
 
-    // // --------------------------------------------------------------------
-    // // Annotations
+    // --------------------------------------------------------------------
+    // Annotations
 
-    // let output_path = args.output_dir.join("annotations.tsv");
-    // info!("Creating annotations: {output_path:?}");
+    info!("Downloading annotations.");
 
-    // let annotations = match args.name {
-    //     Name::SarsCov2 => sarscov2::annotations::build()?,
-    //     Name::Toy1 => toy1::annotations::build()?,
-    //     _ => todo!(),
-    // };
-    // annotations.write(&output_path)?;
+    // Select downloading from versioned file or internal function
+    let annotations = if attributes.annotations.is_some()
+        && attributes.annotations.clone().unwrap().url.is_some()
+    {
+        download_versioned_file(attributes.annotations.unwrap(), &args.output_dir).await?
+    } else {
+        match args.name {
+            Name::Toy1 => toy1::annotations(&attributes.tag, &args.output_dir)?,
+            _ => todo!(),
+        }
+    };
+    attributes.annotations = Some(annotations);
 
     // // --------------------------------------------------------------------
     // // Graph (Phylogeny)
@@ -260,94 +280,84 @@ pub async fn download<D, P>(args: &DownloadArgs) -> Result<Dataset<D, P>, Report
     // Finish
 
     info!("Done.");
+
     Ok(dataset)
 }
 
-// ----------------------------------------------------------------------------
-// Remote File
-// ----------------------------------------------------------------------------
-
-/// A file downloaded from a remote URL.
+/// Download from a [`VersionedFile`].
 ///
-/// ## Generics
+/// ## Arguments
 ///
-/// - `D` - Date, recommended [`chrono::NaiveDate`].
-/// - `P` - File path.
+/// ## Examples
 ///
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct RemoteFile<D, P> {
-    /// File URL
-    pub url: P,
-    // Github commit SHA hash
-    pub sha: String,
-    // Local path of the file.
-    pub local_path: P,
-    // Date the file was created.
-    pub date_created: D,
-    // Date the file was downloaded.
-    pub date_downloaded: D,
-}
-
-impl<D, P> Default for RemoteFile<D, P>
+/// Without decompression.
+///
+/// ```rust
+/// # use tokio_test::{block_on, assert_ok};
+/// use rebar::dataset::{download_versioned_file, VersionedFile};
+///
+/// let url = "https://raw.githubusercontent.com/nextstrain/ncov/v13/data/references_sequences.fasta";
+/// let local = "reference.fasta";
+/// let input_file = VersionedFile {url: Some(url.into()), local: local.into(), .. Default::default()};
+///
+/// let output_dir = "test/dataset/download_versioned_file";
+/// # assert_ok!(block_on(async {
+/// let output_file = download_versioned_file(input_file, &output_dir).await?;
+/// # assert!(std::path::PathBuf::from(output_dir).join(local).exists());
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// # }));
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// ```
+///
+/// With decompression.
+///
+/// ```rust
+/// # use tokio_test::{block_on, assert_ok};
+/// # use rebar::dataset::{download_versioned_file, VersionedFile};
+/// use rebar::utils::Decompress;
+///
+/// let url = "https://raw.githubusercontent.com/corneliusroemer/pango-sequences/a8596a6/data/pango-consensus-sequences_genome-nuc.fasta.zst";
+/// let local = "populations.fasta";
+/// let decompress = Decompress::Zst;
+/// let input_file = VersionedFile {url: Some(url.into()), local: local.into(), decompress: Some(decompress), .. Default::default()};
+///
+/// let output_dir = "test/dataset/download_versioned_file";
+/// # assert_ok!(block_on(async {
+/// let output_file = download_versioned_file(input_file, &output_dir).await?;
+/// # assert!(std::path::PathBuf::from(output_dir).join(local).exists());
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// # }));
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// ```
+#[cfg(feature = "download")]
+pub async fn download_versioned_file<P>(
+    file: VersionedFile,
+    output_dir: &P,
+) -> Result<VersionedFile, Report>
 where
-    D: Default,
-    P: Default,
+    P: AsRef<Path> + Debug,
 {
-    fn default() -> Self {
-        Self::new()
-    }
+    // create output dir if needed
+    std::fs::create_dir_all(output_dir)?;
+    let output = output_dir.as_ref().to_owned().join(&file.local);
+
+    // make sure a URL exists
+    let url = match &file.url {
+        Some(url) => url.as_str(),
+        None => Err(eyre!("Failed to download versioned file, URL is missing: {file:?}"))?,
+    };
+
+    // decompress if requested
+    if let Some(decompress) = &file.decompress {
+        // download to temp file before decompressing
+        let tmp_path = output.with_extension(decompress.to_string());
+        utils::download_file(url, &tmp_path).await?;
+        // decompress to temporary file
+        let tmp_path = utils::decompress_file(&tmp_path, file.decompress.clone())?;
+        std::fs::rename(tmp_path, &output)?;
+    } else {
+        utils::download_file(url, &output).await?;
+    };
+
+    Ok(file)
 }
-
-impl<D, P> RemoteFile<D, P>
-where
-    D: Default,
-    P: Default,
-{
-    pub fn new() -> Self {
-        RemoteFile {
-            url: P::default(),
-            sha: String::new(),
-            local_path: P::default(),
-            date_created: D::default(),
-            date_downloaded: D::default(),
-        }
-    }
-}
-
-// /// Download from a [`RemoteFile`].
-// ///
-// /// ## Arguments
-// ///
-// /// ## Examples
-// ///
-// /// ```rust
-// /// # use tokio_test::{block_on, assert_ok};
-// /// use rebar::dataset::{download_remote_file, RemoteFile};
-// /// let remote_file = RemoteFile {url:  .. Default::default()};
-// /// # assert_ok!(block_on(async {
-// /// download_remote_file()
-// /// # Ok::<(), color_eyre::eyre::Report>(())
-// /// # }));
-// /// # Ok::<(), color_eyre::eyre::Report>(())
-// /// ```
-// pub async fn download_remote_file<D, P>(
-//     remote_file: &RemoteFile<D, P>,
-//     output_path: &P,
-// ) -> Result<(), Report>
-// where
-//     P: AsRef<std::path::Path> + Debug,
-// {
-//     // Check extension for decompression
-//     //let ext = utils::get_extension(&remote_file.url)?;
-//     //let decompress = ext == "zst";
-
-//     // Update the local path to the desired output
-//     //let mut remote_file = remote_file.clone();
-//     //remote_file.local_path = output_path.into();
-
-//     // utils::download_file(&snapshot.url, output_path, decompress).await?;
-
-//     // Ok(remote_file)
-//     Ok(())
-// }

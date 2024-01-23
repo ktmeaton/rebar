@@ -1,8 +1,8 @@
 //! Metadata to uniquely identify a dataset ([Name], [Tag]) and faciliate reproducibility ([Summary]).
 
-use crate::dataset::RemoteFile;
+use crate::utils;
 
-use chrono::{Local, NaiveDate};
+use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};
 use color_eyre::Help;
 use log::warn;
@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::default::Default;
 use std::fmt::{Debug, Formatter};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum::EnumIter;
 
@@ -32,40 +33,42 @@ use strum::EnumIter;
 /// use rebar::dataset::{Attributes, Name, Tag};
 /// use chrono::NaiveDate;
 ///
-/// let attributes: Attributes<NaiveDate, &str> = Attributes { name: Name::SarsCov2, tag:  Tag::Latest, .. Default::default()};
+/// let attributes = Attributes { name: Name::SarsCov2, tag:  Tag::Latest, .. Default::default()};
 /// ```
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct Attributes<D, P> {
+pub struct Attributes {
     /// Dataset [Name].
     pub name: Name,
     /// CLI semantic version used to create the dataset (ex. "0.3.0").
     pub version: String,
     /// Dataset version [Tag].
     pub tag: Tag,
-    /// Optional URL of the reference genome file.
-    pub reference: Option<RemoteFile<D, P>>,
-    /// Optional URL of the population alignment file.
-    pub populations: Option<RemoteFile<D, P>>,
+    /// Optional reference genome file.
+    pub reference: Option<VersionedFile>,
+    /// Optional population alignment file.
+    pub populations: Option<VersionedFile>,
+    /// Optional genome annotations.
+    pub annotations: Option<VersionedFile>,
     /// Additional files that are dataset-specific.
     ///
     /// For example, in the [SARS-CoV-2](Name::SarsCov2) dataset, the [alias key](https://github.com/cov-lineages/pango-designation/blob/master/pango_designation/alias_key.json) maps aliases to lineage names.
-    pub misc: BTreeMap<String, Option<RemoteFile<D, P>>>,
+    pub misc: BTreeMap<String, Option<VersionedFile>>,
 }
 
-impl<D, P> Default for Attributes<D, P> {
+impl Default for Attributes {
     fn default() -> Self {
         Self::new()
     }
 }
-impl<D, P> Attributes<D, P> {
+impl Attributes {
     /// Returns new [`Attributes`] with empty or default values.
     ///
     /// ```rust
     /// use rebar::dataset::Attributes;
     /// use chrono::NaiveDate;
     ///
-    /// let attributes = Attributes::<NaiveDate, &str>::new();
+    /// let attributes = Attributes::new();
     /// ```
     pub fn new() -> Self {
         Attributes {
@@ -74,6 +77,7 @@ impl<D, P> Attributes<D, P> {
             name: Name::default(),
             reference: None,
             populations: None,
+            annotations: None,
             misc: BTreeMap::new(),
         }
     }
@@ -86,25 +90,24 @@ impl<D, P> Attributes<D, P> {
     /// use rebar::dataset::Attributes;
     /// use chrono::NaiveDate;
     ///
-    /// let attr_out = Attributes::<NaiveDate, String>::new();
-    /// let file    = tempfile::NamedTempFile::new()?;
-    /// attr_out.write(file.path())?;
+    /// let attr_out = Attributes::default();
+    /// let file     = tempfile::NamedTempFile::new()?;
+    /// let path     = file.path();
+    /// attr_out.write(&path)?;
     ///
-    /// let attr_in = Attributes::<NaiveDate, String>::read(file.path())?;
+    /// let attr_in = Attributes::read(&path)?;
     /// # assert_eq!(attr_in, attr_out);
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     #[cfg(feature = "serde")]
-    pub fn read<R>(path: R) -> Result<Attributes<D, P>, Report>
+    pub fn read<P>(path: &P) -> Result<Attributes, Report>
     where
-        D: for<'de> Deserialize<'de>,
-        P: Debug + for<'de> Deserialize<'de>,
-        R: AsRef<std::path::Path> + Debug,
+        P: AsRef<Path> + Debug,
     {
-        let file = std::fs::File::open(&path)
+        let file = std::fs::File::open(path)
             .wrap_err(eyre!("Failed to open Attributes file: {path:?}."))?;
         let reader = std::io::BufReader::new(file);
-        let attributes: Attributes<D, P> = serde_json::from_reader(reader)
+        let attributes = serde_json::from_reader(reader)
             .wrap_err(eyre!("Failed to deserialize Attributes file: {path:?}."))?;
         Ok(attributes)
     }
@@ -117,21 +120,23 @@ impl<D, P> Attributes<D, P> {
     /// use rebar::dataset::Attributes;
     /// use chrono::NaiveDate;
     ///
-    /// let attributes = Attributes::<NaiveDate, &str>::new();
+    /// let attributes = Attributes::default();
     /// let file       = tempfile::NamedTempFile::new()?;
+    /// let path       = file.path();
     ///
-    /// attributes.write(file.path())?;
-    /// # assert!(attributes.write("/root").is_err());
+    /// attributes.write(&path)?;
+    /// # assert!(attributes.write(&"/root").is_err());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     #[cfg(feature = "serde")]
-    pub fn write<W>(&self, path: W) -> Result<(), Report>
+    pub fn write<P>(&self, path: &P) -> Result<(), Report>
     where
-        D: Debug + Serialize,
-        P: Debug + Serialize,
-        W: AsRef<std::path::Path> + Debug,
+        P: AsRef<Path> + Debug,
     {
-        let mut file = std::fs::File::create(&path)
+        utils::create_parent_dir(path)?;
+
+        // write file
+        let mut file = std::fs::File::create(path)
             .wrap_err(eyre!("Failed to create Attributes file: {path:?}"))?;
         let output = serde_json::to_string_pretty(self)
             .wrap_err(eyre!("Failed to serialize Attributes: {self:?}"))?;
@@ -227,23 +232,40 @@ pub enum Tag {
     /// For a [`Dataset`] where files were downloaded from the latest possible available.
     ///
     /// ```rust
-    /// let tag = rebar::dataset::Tag::Latest;
+    /// use rebar::dataset::Tag;
+    /// let tag = Tag::Latest;
     /// ```
     Latest,
     /// For a [`Dataset`] that has at least one file that is version-controlled or date-controlled.
     /// For example, source files downloaded from GitHub repositories.
     ///
-    /// The String is a date in the format "yyyy-mm-dd", such as "2024-01-01".
+    /// The String is a UTC date in one of two formats.
+    ///
+    /// Date: "yyyy-mm-dd".
     ///
     /// ```rust
-    /// let date = "2024-01-01".to_string();
-    /// let tag = rebar::dataset::Tag::Archive(date);
+    /// # use rebar::dataset::Tag;
+    /// use std::str::FromStr;
+    /// let tag = Tag::from_str("2024-01-01")?;
+    /// assert_eq!(tag, Tag::Archive("2024-01-01T23:59:59Z".to_string()));
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
+    ///
+    /// Datetime in [ISO_8601](https://en.wikipedia.org/wiki/ISO_8601) or [RFC 3339](https://docs.rs/chrono/latest/chrono/struct.DateTime.html#method.parse_from_rfc3339) format: "yyyy-mm-ddTHH:mm:ssZ"
+    ///
+    /// ```rust
+    /// # use rebar::dataset::Tag;
+    /// # use std::str::FromStr;
+    /// let tag = Tag::from_str("2024-01-01T12:05:32Z")?;
+    /// assert_eq!(tag, Tag::Archive("2024-01-01T12:05:32Z".to_string()));
+    /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     Archive(String),
     /// For all other [`Dataset`], that are custom created with no options to date-control.
     ///
     /// ```rust
-    /// let tag = rebar::dataset::Tag::Custom;;
+    /// # use rebar::dataset::Tag;
+    /// let tag = Tag::Custom;
     /// ```
     #[default]
     Custom,
@@ -266,20 +288,43 @@ impl FromStr for Tag {
     type Err = Report;
 
     /// Returns a [`Dataset`] [`Tag`] converted from a [`str`].
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use rebar::dataset::Tag;
+    /// use std::str::FromStr;
+    ///
+    /// assert_eq!(Tag::from_str("latest")?, Tag::Latest);
+    /// assert_eq!(Tag::from_str("custom")?, Tag::Custom);
+    /// assert_eq!(Tag::from_str("2024-01-01")?, Tag::Archive("2024-01-01T23:59:59Z".to_string()));
+    /// assert_eq!(Tag::from_str("2024-01-02T12:00:00Z")?, Tag::Archive("2024-01-02T12:00:00Z".to_string()));
+    /// assert!(Tag::from_str("9999-01-02").is_err());
+    /// assert!(Tag::from_str("unknown").is_err());
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
     fn from_str(tag: &str) -> Result<Tag, Report> {
         let tag = match tag {
             "latest" => Tag::Latest,
             "custom" => Tag::Custom,
             _ => {
-                // check if it's an archival date string
-                let tag_date = NaiveDate::parse_from_str(tag, "%Y-%m-%d")
-                    .wrap_err_with(|| eyre!("Archive tag date is invalid: {tag:?}. Example of a valid Archive tag: 2023-08-17"))?;
+                let (tag_date, tag): (DateTime<Utc>, String) = match tag.parse() {
+                    Ok(date) => (date, tag.to_string()),
+                    Err(_) => {
+                        let tag_rfc_3339 = format!("{tag}T23:59:59Z");
+                        let tag_date = tag_rfc_3339.parse().wrap_err(
+                        eyre!("Archive tag date is invalid: {tag:?}")
+                        .suggestion("Example of a valid Archive tag: 2023-08-17 or 2023-08-17T12:00:00Z")
+                        )?;
+                        (tag_date, tag_rfc_3339)
+                    }
+                };
                 // is it in the future?
-                let today = Local::now().date_naive();
+                let today: DateTime<Utc> = Local::now().into();
                 if tag_date > today {
                     return Err(eyre!("Archive tag date is in the future: {tag:?}. Please pick a date on or before today: {today:?}"))?;
                 }
-                Tag::Archive(tag.to_string())
+                Tag::Archive(tag)
             }
         };
 
@@ -298,21 +343,18 @@ impl FromStr for Tag {
 /// use rebar::dataset::{get_compatibility, Name};
 /// use chrono::NaiveDate;
 ///
-/// get_compatibility::<NaiveDate>(&Name::SarsCov2)?;
-/// get_compatibility::<NaiveDate>(&Name::Toy1)?;
-/// get_compatibility::<NaiveDate>(&Name::Custom)?;
+/// get_compatibility(&Name::SarsCov2)?;
+/// get_compatibility(&Name::Toy1)?;
+/// get_compatibility(&Name::Custom)?;
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
-pub fn get_compatibility<D>(name: &Name) -> Result<Compatibility<D>, Report>
-where
-    D: std::convert::From<NaiveDate>,
-{
-    let mut compatibility: Compatibility<D> = Compatibility::new();
+pub fn get_compatibility(name: &Name) -> Result<Compatibility, Report> {
+    let mut compatibility = Compatibility::new();
     #[allow(clippy::single_match)]
     match name {
         Name::SarsCov2 => {
             compatibility.min_date =
-                Some(NaiveDate::parse_from_str("2023-02-09", "%Y-%m-%d")?.into());
+                Some(DateTime::parse_from_rfc3339("2023-02-09T00:00:00Z")?.into())
         }
         Name::Toy1 => compatibility.cli_version = Some(">=0.2.0".to_string()),
         //Name::Custom => compatibility.cli_version = Some(">=0.3.0".to_string()),
@@ -331,7 +373,7 @@ where
 ///
 /// assert_eq!(true,  is_compatible(Some(&Name::SarsCov2), Some(&Tag::Latest))?);
 /// assert_eq!(true,  is_compatible(Some(&Name::SarsCov2), Some(&Tag::from_str("2023-06-06")?))?);
-/// assert_eq!(false, is_compatible(Some(&Name::SarsCov2), Some(&Tag::from_str("2023-01-01")?))?);
+/// assert_eq!(false, is_compatible(Some(&Name::SarsCov2), Some(&Tag::from_str("2023-02-08")?))?);
 /// assert_eq!(true,  is_compatible(Some(&Name::Toy1),     None)?);
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
@@ -366,7 +408,7 @@ pub fn is_compatible(name: Option<&Name>, tag: Option<&Tag>) -> Result<bool, Rep
             }
         }
         Some(Tag::Archive(s)) => {
-            let tag_date = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")?;
+            let tag_date = DateTime::parse_from_rfc3339(s)?;
             // tag date is too early
             if let Some(min_date) = compatibility.min_date {
                 if tag_date < min_date {
@@ -400,9 +442,9 @@ pub fn is_compatible(name: Option<&Name>, tag: Option<&Tag>) -> Result<bool, Rep
 ///
 /// ```rust
 /// use rebar::dataset::Compatibility;
-/// use chrono::NaiveDate;
+/// use chrono::{DateTime, Utc};
 ///
-/// let min_date = Some(NaiveDate::parse_from_str("2023-02-09", "%Y-%m-%d")?);
+/// let min_date = Some("2024-01-01T00:00:00Z".parse::<DateTime<Utc>>()?);
 /// let max_date = None;
 /// let cli_version = Some(">=1.0.0".to_string());
 ///
@@ -411,22 +453,22 @@ pub fn is_compatible(name: Option<&Name>, tag: Option<&Tag>) -> Result<bool, Rep
 /// ```
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct Compatibility<D> {
+pub struct Compatibility {
     /// The minimum date for the dataset.
-    pub min_date: Option<D>,
+    pub min_date: Option<DateTime<Utc>>,
     /// The maximum date for the dataset.
-    pub max_date: Option<D>,
+    pub max_date: Option<DateTime<Utc>>,
     /// The CLI semantic version constraint.
     pub cli_version: Option<String>,
 }
 
-impl<D> Default for Compatibility<D> {
+impl Default for Compatibility {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<D> Compatibility<D> {
+impl Compatibility {
     /// Returns a new [`Compatibility`] with no dates or CLI constraints.
     ///
     ///  ## Examples
@@ -435,10 +477,54 @@ impl<D> Compatibility<D> {
     /// use rebar::dataset::Compatibility;
     /// use chrono::NaiveDate;
     ///
-    /// let c: Compatibility<NaiveDate> = Compatibility::new();
+    /// let c = Compatibility::new();
     /// assert_eq!(c, Compatibility { min_date: None, max_date: None, cli_version: None});
     /// ```
     pub fn new() -> Self {
         Compatibility { min_date: None, max_date: None, cli_version: None }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Remote File
+// ----------------------------------------------------------------------------
+
+/// A file downloaded from a remote URL.
+///
+/// ## Generics
+///
+/// - `D` - Date, recommended [`chrono::NaiveDate`].
+/// - `P` - File path.
+///
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct VersionedFile {
+    // Local name of the file
+    pub local: PathBuf,
+    /// File URL
+    pub url: Option<String>,
+    // Date the file was created.
+    pub date_created: Option<DateTime<Utc>>,
+    // Date the file was downloaded.
+    pub date_downloaded: Option<DateTime<Utc>>,
+    // Optional Decompression
+    pub decompress: Option<utils::Decompress>,
+}
+
+impl Default for VersionedFile {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl VersionedFile {
+    pub fn new() -> Self {
+        VersionedFile {
+            local: PathBuf::default(),
+            url: None,
+            date_created: None,
+            date_downloaded: None,
+            decompress: None,
+        }
     }
 }

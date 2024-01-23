@@ -6,7 +6,6 @@ pub mod dataset;
 // // pub mod simulate;
 
 use clap::{Parser, Subcommand, ValueEnum};
-// use std::default::Default;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
@@ -71,23 +70,17 @@ pub struct Cli {
 }
 
 /// CLI [commands](#variants). Used to decide which runtime [Command](#variants) the CLI arguments should be passed to.
-///
 #[derive(Debug, Subcommand)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Command {
     /// Pass CLI arguments to the [Dataset](dataset::Command) subcommands.
-    /// <br>
+    /// ## Examples
     /// ```rust
-    /// use rebar::{cli::Command, cli::dataset, Cli};
+    /// use rebar::{Cli, cli::Command};
     /// use clap::Parser;
     /// let input = ["rebar", "dataset", "--help"];
     /// let args = Cli::parse_from(input);
-    /// match args.command {
-    ///   Command::Dataset(dataset_args) => dataset_args.command {
-    ///     cli::dataset::Download(dataset_args) => (),
-    ///     cli::dataset::List(dataset_args)     => (),
-    ///   }
-    /// }
+    /// matches!(args.command, Command::Dataset(_));
     /// ```
     #[clap(about = "List or download available datasets.")]
     Dataset(dataset::Args),

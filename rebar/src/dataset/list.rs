@@ -1,13 +1,13 @@
 //! List available datasets for download.
 
-use crate::dataset::{get_compatibility, is_compatible, Compatibility, Name, Tag};
+use crate::dataset::{get_compatibility, is_compatible, Name, Tag};
 #[cfg(feature = "cli")]
 use clap::Parser;
 use color_eyre::eyre::{Report, Result};
-use comfy_table::Table;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
+use tabled::Table;
 
 // ----------------------------------------------------------------------------
 // Structs
@@ -59,8 +59,8 @@ impl ListArgs {
 /// ```
 pub fn list(args: &ListArgs) -> Result<Table, Report> {
     // table of name, tag, cli_version
-    let mut table = Table::new();
-    table.set_header(vec!["Name", "CLI Version", "Minimum Tag Date", "Maximum Tag Date"]);
+    let mut builder = tabled::builder::Builder::default();
+    builder.push_record(vec!["Name", "CLI Version", "Minimum Tag Date", "Maximum Tag Date"]);
 
     // Check all named datasets
     Name::iter()
@@ -72,7 +72,7 @@ pub fn list(args: &ListArgs) -> Result<Table, Report> {
         // check compatibility
         .filter(|name| is_compatible(Some(name), args.tag.as_ref()).unwrap_or(false))
         .try_for_each(|name| {
-            let c: Compatibility<chrono::NaiveDate> = get_compatibility(&name)?;
+            let c = get_compatibility(&name)?;
 
             let cli_version = match c.cli_version {
                 Some(v) => v.to_string(),
@@ -89,10 +89,11 @@ pub fn list(args: &ListArgs) -> Result<Table, Report> {
             };
 
             let row = vec![name.to_string(), cli_version, min_date, max_date];
-            table.add_row(row);
+            builder.push_record(row);
 
             Ok::<(), Report>(())
         })?;
 
+    let table = builder.build();
     Ok(table)
 }

@@ -1,6 +1,6 @@
 // //! Command-line interface (CLI) for Dataset [Commands](Command).
 
-use crate::dataset::ListArgs;
+use crate::dataset::{DownloadArgs, ListArgs};
 use clap::{Parser, Subcommand};
 // use rebar_dataset::{download, list};
 #[cfg(feature = "serde")]
@@ -20,35 +20,35 @@ pub struct Args {
 #[derive(Debug, Subcommand)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Command {
+    // ------------------------------------------------------------------------
     /// Pass CLI arguments to the dataset [list](crate::dataset::list()) method.
-    /// <br>
+    /// ## Examples
     /// ```rust
-    /// use rebar::cli::dataset::Command;
-    /// use rebar::dataset::{download, list};
-    /// let args    = list::Args::default();
-    /// let command = Command::List( list::Args::default() );
+    /// use rebar::{Cli, cli, cli::Command, cli::dataset};
+    /// use clap::Parser;
+    /// let input   = ["rebar", "dataset", "list", "--help"];
+    /// let command = Cli::parse_from(input).command;
     /// match command {
-    ///   Command::List(args)     => _ = list(&args),
-    ///   Command::Download(args) => _ = download(&args),
+    ///   Command::Dataset(args) => assert!(matches!(args.command, dataset::Command::List(_))),
+    ///   _                      => assert!(false),
     /// }
-    /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     #[clap(about = "List datasets.")]
     List(ListArgs),
-    // /// Pass CLI arguments to the dataset [download](crate::dataset::download()) method.
-    // /// <br>
-    // /// ```rust
-    // /// use rebar::cli::dataset::Command;
-    // /// use rebar::dataset::{download, list};
-    // /// let args    = download::Args::default();
-    // /// let command = Command::Download(args);
-    // /// match command {
-    // ///   Command::List(args)     => _ = list(&args),
-    // ///   Command::Download(args) => _ = download(&args),
-    // /// }
-    // /// # Ok::<(), color_eyre::eyre::Report>(())
-    // /// ```
-    // #[clap(about = "Download dataset.")]
-    // #[clap(arg_required_else_help = true)]
-    // Download(download::Args),
+    // ------------------------------------------------------------------------
+    /// Pass CLI arguments to the dataset [download](crate::dataset::download()) method.
+    /// ## Examples
+    /// ```rust
+    /// use rebar::{Cli, cli, cli::Command, cli::dataset};
+    /// use clap::Parser;
+    /// let input   = ["rebar", "dataset", "download", "--help"];
+    /// let command = Cli::parse_from(input).command;
+    /// match command {
+    ///   Command::Dataset(args) => assert!(matches!(args.command, dataset::Command::Download(_))),
+    ///   _                      => assert!(false),
+    /// }
+    /// ```
+    #[clap(about = "Download dataset.")]
+    #[clap(arg_required_else_help = true)]
+    Download(DownloadArgs),
 }

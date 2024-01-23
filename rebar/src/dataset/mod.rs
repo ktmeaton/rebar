@@ -4,15 +4,15 @@ mod attributes;
 mod download;
 mod list;
 //pub mod list;
-// pub mod toy1;
+pub mod toy1;
 
 #[doc(inline)]
-pub use attributes::{get_compatibility, is_compatible, Attributes, Compatibility, Name, Tag};
+pub use attributes::*;
 #[doc(inline)]
-pub use download::{download, DownloadArgs, RemoteFile};
+#[cfg(feature = "download")]
+pub use download::*;
 #[doc(inline)]
 pub use list::{list, ListArgs};
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
@@ -23,9 +23,9 @@ use std::fmt::{Display, Formatter};
 /// A collection of parent population sequences aligned to a reference.
 #[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
-pub struct Dataset<D, P> {
+pub struct Dataset {
     /// [`Dataset`] [`Attributes`].
-    pub attributes: Attributes<D, P>,
+    pub attributes: Attributes,
     // /// Reference sequence record, with sequence bases kept
     // pub reference: sequence::Record,
     // /// Dataset populations, map of names to sequences.
@@ -38,19 +38,19 @@ pub struct Dataset<D, P> {
     // pub edge_cases: Vec<run::Args>,
 }
 
-impl<D, P> Display for Dataset<D, P> {
+impl Display for Dataset {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         write!(f, "name: {}, tag: {}", self.attributes.name, self.attributes.tag)
     }
 }
 
-impl<D, P> Default for Dataset<D, P> {
+impl Default for Dataset {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<D, P> Dataset<D, P> {
+impl Dataset {
     /// Create a new dataset.
     pub fn new() -> Self {
         Dataset {

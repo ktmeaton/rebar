@@ -1,12 +1,36 @@
 use color_eyre::eyre::{eyre, ContextCompat, Report, Result, WrapErr};
 use color_eyre::Help;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::convert::AsRef;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use tabled::{
+    settings::{Alignment, Padding, Style},
+    Table,
+};
 use zstd::stream::read::Decoder;
 
+pub fn create_parent_dir<P>(path: &P) -> Result<(), Report>
+where
+    P: AsRef<Path>,
+{
+    // convert from generics to Path and PathBuf
+    let path: PathBuf = path.as_ref().into();
+
+    // check if we need to create an output directory
+    if let Some(parent_dir) = path.parent() {
+        if !parent_dir.exists() {
+            std::fs::create_dir_all(parent_dir)?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Decompress {
     Zst,
 }
@@ -21,6 +45,15 @@ impl FromStr for Decompress {
     }
 }
 
+impl Display for Decompress {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Decompress::Zst => String::from("zst"),
+        };
+        write!(f, "{}", s)
+    }
+}
+
 /// Decompress file.
 ///
 /// ## Arguments
@@ -32,32 +65,39 @@ impl FromStr for Decompress {
 ///
 /// ```rust
 /// # use tokio_test::{block_on, assert_ok};
-/// # use rebar::utils::{download_file, decompress_file};
+/// # use rebar::utils::{download_file, decompress_file, Decompress};
 /// let url = "https://raw.githubusercontent.com/corneliusroemer/pango-sequences/a8596a6/data/pango-consensus-sequences_genome-nuc.fasta.zst";
 /// # assert_ok!(block_on(async {
 /// let output = "test/utils/decompress_file/pango-consensus-sequences_genome-nuc.fasta.zst";
-/// download_file(&url, &output, false).await?;
-/// decompress_file(&output)?;
+/// download_file(&url, &output).await?;
+/// decompress_file(&output, Some(Decompress::Zst))?;
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// # }));
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
-pub fn decompress_file<P>(path: &P) -> Result<PathBuf, Report>
+#[cfg(feature = "download")]
+pub fn decompress_file<P>(path: &P, decompress: Option<Decompress>) -> Result<PathBuf, Report>
 where
     P: AsRef<Path> + Debug,
 {
     // extract the output file path without the last extension
     let output = path.as_ref().with_extension("");
 
-    // select decompress algorithm based on extension
-    let ext = path
-        .as_ref()
-        .extension()
-        .wrap_err("Failed to get file extension: {path:?}")?
-        .to_str()
-        .wrap_err("Failed to convert file extension to str: {path:?}")?;
+    // if decompression was not specified, guess from extension
+    let decompress = match decompress {
+        Some(decompress) => decompress,
+        None => {
+            let ext = path
+                .as_ref()
+                .extension()
+                .wrap_err("Failed to get file extension: {path:?}")?
+                .to_str()
+                .wrap_err("Failed to convert file extension to str: {path:?}")?;
+            Decompress::from_str(ext)?
+        }
+    };
 
-    match Decompress::from_str(ext)? {
+    match decompress {
         Decompress::Zst => {
             let reader = std::fs::File::open(path).wrap_err(format!("Failed to open: {path:?}"))?;
             let mut decoder =
@@ -80,7 +120,7 @@ where
 ///
 /// ## Examples
 ///
-/// Download as text (`true`).
+/// Download a text file.
 ///
 /// ```rust
 /// # use tokio_test::{block_on, assert_ok};
@@ -89,13 +129,13 @@ where
 /// let url = "https://raw.githubusercontent.com/nextstrain/ncov/v13/data/references_sequences.fasta";
 /// # assert_ok!(block_on(async {
 /// let output = "test/utils/download_file/reference.fasta";
-/// download_file(&url, &output, true).await?;
+/// download_file(&url, &output).await?;
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// # }));
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
 ///
-/// Download as binary (`false`).
+/// Download a binary file.
 ///
 /// ```rust
 /// # use tokio_test::{block_on, assert_ok};
@@ -103,29 +143,20 @@ where
 /// let url = "https://raw.githubusercontent.com/corneliusroemer/pango-sequences/a8596a6/data/pango-consensus-sequences_genome-nuc.fasta.zst";
 /// # assert_ok!(block_on(async {
 /// let output = "test/utils/download_file/pango-consensus-sequences_genome-nuc.fasta.zst";
-/// download_file(&url, &output, false).await?;
+/// download_file(&url, &output).await?;
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// # }));
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
 #[cfg(feature = "download")]
-pub async fn download_file<P>(
-    url: &str,
-    output: &P,
-    download_as_text: bool,
-) -> Result<PathBuf, Report>
+pub async fn download_file<P>(url: &str, output: &P) -> Result<PathBuf, Report>
 where
     P: AsRef<Path> + Debug,
 {
+    create_parent_dir(output)?;
+
     // convert from generics to Path and PathBuf
     let output: PathBuf = output.as_ref().into();
-
-    // check if we need to create an output directory
-    if let Some(output_dir) = output.parent() {
-        if !output_dir.exists() {
-            std::fs::create_dir_all(output_dir)?;
-        }
-    }
 
     // get URL response
     let response = reqwest::get(url).await?;
@@ -134,11 +165,9 @@ where
             .suggestion(format!("Status code: {}", response.status())))?;
     }
 
-    match download_as_text {
-        true => std::fs::write(&output, response.text().await?),
-        false => std::fs::write(&output, response.bytes().await?),
-    }
-    .wrap_err(format!("Unable to write: {output:?}"))?;
+    // write URL content to output file
+    std::fs::write(&output, response.bytes().await?)
+        .wrap_err(format!("Unable to write: {output:?}"))?;
 
     Ok(output)
 }
@@ -170,20 +199,107 @@ pub fn get_delimiter<P>(path: &P) -> Result<char, Report>
 where
     P: AsRef<Path> + Debug,
 {
-    let ext = path
-        .as_ref()
-        .extension()
-        .wrap_err("Failed to get file extension: {path:?}")?
-        .to_str()
-        .wrap_err("Failed to convert file extension to str: {path:?}")?;
+    let ext = get_extension(path)?;
     // convert extension to the expected delimiter
-    match ext {
+    match ext.as_str() {
         "tsv" | "txt" => Ok('\t'),
         "csv" => Ok(','),
         _ext => {
             Err(eyre!("Unknown file extension: {_ext:?}").suggestion("Options: tsv, csv, or txt"))
         }
     }
+}
+
+pub fn get_extension<P>(path: &P) -> Result<String, Report>
+where
+    P: AsRef<Path> + Debug,
+{
+    Ok(path
+        .as_ref()
+        .extension()
+        .wrap_err("Failed to get extension: {path:?}")?
+        .to_str()
+        .wrap_err("Failed to convert extension to string: {path:?}")?
+        .to_string())
+}
+
+/// Write a table to file.
+///
+/// ## Examples
+///
+/// ```rust
+/// use tabled::Table;
+/// use rebar::utils::write_table;
+///
+/// let table = Table::new(&[&["1", "2"], &["A", "B"]]);
+/// let path = "test/utils/write_table/table.tsv";
+/// write_table(&table, &path, None)?;
+/// # assert!(std::path::PathBuf::from(path).exists());
+///
+/// let path = "test/utils/write_table/table.csv";
+/// write_table(&table, &path, None)?;
+/// # assert!(std::path::PathBuf::from(path).exists());
+///
+/// let path = "test/utils/write_table/table.pipe";
+/// write_table(&table, &path, Some('|'))?;
+/// # assert!(std::path::PathBuf::from(path).exists());
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// ```
+pub fn write_table<P>(table: &Table, path: &P, delim: Option<char>) -> Result<(), Report>
+where
+    P: AsRef<Path> + Debug,
+{
+    let delim = match delim {
+        Some(c) => c,
+        None => get_delimiter(&path)?,
+    };
+
+    create_parent_dir(path)?;
+
+    let mut table = table.clone();
+
+    table.with(Style::empty().vertical(delim)).with(Alignment::left()).with(Padding::zero());
+
+    std::fs::write(path, format!("{table}")).wrap_err("Failed to write table: {path:?}")?;
+
+    Ok(())
+}
+
+/// Read a table from file.
+///
+/// ## Examples
+///
+/// ```rust
+/// use tabled::Table;
+/// use rebar::utils::{read_table, write_table};
+///
+/// let table_out = Table::new(&[&["1", "2"], &["A", "B"]]);
+/// let path = "test/utils/write_table/table.tsv";
+/// write_table(&table_out, &path, None)?;
+/// let table_in = read_table(&path, None)?;
+/// assert_eq!(table_out, table_in);
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// ```
+pub fn read_table<P>(path: &P, delim: Option<char>) -> Result<Table, Report>
+where
+    P: AsRef<Path> + Debug,
+{
+    let delim = match delim {
+        Some(c) => c,
+        None => get_delimiter(&path)?,
+    };
+
+    let content = std::fs::read_to_string(path).wrap_err("Failed to read table: {path:?}")?;
+
+    let mut builder = tabled::builder::Builder::default();
+    let lines = content.split('\n').collect::<Vec<_>>();
+    lines.into_iter().for_each(|line| {
+        let row = line.split(delim).collect::<Vec<_>>();
+        builder.push_record(row);
+    });
+
+    let table = builder.build();
+    Ok(table)
 }
 
 // pub use crate::table::Table;

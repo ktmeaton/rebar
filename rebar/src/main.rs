@@ -1,10 +1,15 @@
 #[cfg(feature = "cli")]
 use clap::Parser;
 use color_eyre::eyre::{Report, Result};
+
 #[cfg(feature = "cli")]
-use rebar::dataset;
+use rebar::cli::dataset::Command::{Download, List};
 #[cfg(feature = "cli")]
-use rebar::{cli, Cli};
+use rebar::cli::Command::Dataset;
+#[cfg(feature = "cli")]
+use rebar::dataset::{download, list};
+#[cfg(feature = "cli")]
+use rebar::Cli;
 
 #[tokio::main]
 async fn main() -> Result<(), Report> {
@@ -28,10 +33,11 @@ async fn main() -> Result<(), Report> {
         // check which CLI command we're running (dataset, run, plot)
         match args.command {
             // Dataset
-            cli::Command::Dataset(args) => match args.command {
+            Dataset(args) => match args.command {
                 // List datasets available for download as table
-                cli::dataset::Command::List(args) => println!("{}", dataset::list(&args)?),
-                //cli::dataset::Command::Download(args) => _ = dataset::download(&args).await?,
+                List(args) => println!("{}", list(&args)?),
+                // Download available dataset
+                Download(args) => _ = download(&args).await?,
             },
             // // Run
             // Command::Run(mut args) => rebar::run::run(&mut args)?,
