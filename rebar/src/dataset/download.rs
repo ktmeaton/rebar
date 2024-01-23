@@ -1,7 +1,6 @@
 //! Download an available dataset.
 
-use crate::dataset::{is_compatible, toy1, Attributes, Name, Tag, VersionedFile};
-use crate::utils;
+use crate::dataset::{is_compatible, toy1, Attributes, Name, Tag};
 use crate::Dataset;
 
 #[cfg(feature = "cli")]
@@ -12,7 +11,7 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fmt::Debug;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Download dataset arguments.
 #[derive(Debug)]
@@ -147,7 +146,8 @@ pub async fn download(args: &DownloadArgs) -> Result<Dataset, Report> {
     // Select downloading from versioned file or internal function
     let reference =
         if attributes.reference.is_some() && attributes.reference.clone().unwrap().url.is_some() {
-            download_versioned_file(attributes.reference.unwrap(), &args.output_dir).await?
+            let versioned_file = attributes.reference.unwrap();
+            versioned_file.download(&args.output_dir).await?
         } else {
             match args.name {
                 Name::Toy1 => toy1::reference(&attributes.tag, &args.output_dir)?,
@@ -165,7 +165,8 @@ pub async fn download(args: &DownloadArgs) -> Result<Dataset, Report> {
     let populations = if attributes.populations.is_some()
         && attributes.populations.clone().unwrap().url.is_some()
     {
-        download_versioned_file(attributes.populations.unwrap(), &args.output_dir).await?
+        let versioned_file = attributes.populations.unwrap();
+        versioned_file.download(&args.output_dir).await?
     } else {
         match args.name {
             Name::Toy1 => toy1::populations(&attributes.tag, &args.output_dir)?,
@@ -183,7 +184,8 @@ pub async fn download(args: &DownloadArgs) -> Result<Dataset, Report> {
     let annotations = if attributes.annotations.is_some()
         && attributes.annotations.clone().unwrap().url.is_some()
     {
-        download_versioned_file(attributes.annotations.unwrap(), &args.output_dir).await?
+        let versioned_file = attributes.annotations.unwrap();
+        versioned_file.download(&args.output_dir).await?
     } else {
         match args.name {
             Name::Toy1 => toy1::annotations(&attributes.tag, &args.output_dir)?,
@@ -192,22 +194,26 @@ pub async fn download(args: &DownloadArgs) -> Result<Dataset, Report> {
     };
     attributes.annotations = Some(annotations);
 
-    // // --------------------------------------------------------------------
-    // // Graph (Phylogeny)
+    // --------------------------------------------------------------------
+    // Phylogeny
 
-    // let output_path = args.output_dir.join("phylogeny.json");
-    // info!("Building phylogeny: {output_path:?}");
+    if cfg!(phylo) {
+        info!("Downloading phylogeny.");
 
-    // let phylogeny = match args.name {
-    //     Name::SarsCov2 => sarscov2::phylogeny::build(&mut summary, &args.output_dir).await?,
-    //     Name::Toy1 => toy1::phylogeny::build()?,
-    //     _ => todo!(),
-    // };
-    // phylogeny.write(&output_path)?;
-    // // Also write as .dot file for graphviz visualization.
-    // let output_path = args.output_dir.join("phylogeny.dot");
-    // info!("Exporting graphviz phylogeny: {output_path:?}");
-    // phylogeny.write(&output_path)?;
+        // Select downloading from versioned file or internal function
+        let phylogeny = if attributes.phylogeny.is_some()
+            && attributes.phylogeny.clone().unwrap().url.is_some()
+        {
+            let versioned_file = attributes.phylogeny.unwrap();
+            versioned_file.download(&args.output_dir).await?
+        } else {
+            match args.name {
+                Name::Toy1 => toy1::phylogeny(&attributes.tag, &args.output_dir)?,
+                _ => todo!(),
+            }
+        };
+        attributes.phylogeny = Some(phylogeny);
+    }
 
     // // --------------------------------------------------------------------
     // // Export Mutations
@@ -282,82 +288,4 @@ pub async fn download(args: &DownloadArgs) -> Result<Dataset, Report> {
     info!("Done.");
 
     Ok(dataset)
-}
-
-/// Download from a [`VersionedFile`].
-///
-/// ## Arguments
-///
-/// ## Examples
-///
-/// Without decompression.
-///
-/// ```rust
-/// # use tokio_test::{block_on, assert_ok};
-/// use rebar::dataset::{download_versioned_file, VersionedFile};
-///
-/// let url = "https://raw.githubusercontent.com/nextstrain/ncov/v13/data/references_sequences.fasta";
-/// let local = "reference.fasta";
-/// let input_file = VersionedFile {url: Some(url.into()), local: local.into(), .. Default::default()};
-///
-/// let output_dir = "test/dataset/download_versioned_file";
-/// # assert_ok!(block_on(async {
-/// let output_file = download_versioned_file(input_file, &output_dir).await?;
-/// # assert!(std::path::PathBuf::from(output_dir).join(local).exists());
-/// # Ok::<(), color_eyre::eyre::Report>(())
-/// # }));
-/// # Ok::<(), color_eyre::eyre::Report>(())
-/// ```
-///
-/// With decompression.
-///
-/// ```rust
-/// # use tokio_test::{block_on, assert_ok};
-/// # use rebar::dataset::{download_versioned_file, VersionedFile};
-/// use rebar::utils::Decompress;
-///
-/// let url = "https://raw.githubusercontent.com/corneliusroemer/pango-sequences/a8596a6/data/pango-consensus-sequences_genome-nuc.fasta.zst";
-/// let local = "populations.fasta";
-/// let decompress = Decompress::Zst;
-/// let input_file = VersionedFile {url: Some(url.into()), local: local.into(), decompress: Some(decompress), .. Default::default()};
-///
-/// let output_dir = "test/dataset/download_versioned_file";
-/// # assert_ok!(block_on(async {
-/// let output_file = download_versioned_file(input_file, &output_dir).await?;
-/// # assert!(std::path::PathBuf::from(output_dir).join(local).exists());
-/// # Ok::<(), color_eyre::eyre::Report>(())
-/// # }));
-/// # Ok::<(), color_eyre::eyre::Report>(())
-/// ```
-#[cfg(feature = "download")]
-pub async fn download_versioned_file<P>(
-    file: VersionedFile,
-    output_dir: &P,
-) -> Result<VersionedFile, Report>
-where
-    P: AsRef<Path> + Debug,
-{
-    // create output dir if needed
-    std::fs::create_dir_all(output_dir)?;
-    let output = output_dir.as_ref().to_owned().join(&file.local);
-
-    // make sure a URL exists
-    let url = match &file.url {
-        Some(url) => url.as_str(),
-        None => Err(eyre!("Failed to download versioned file, URL is missing: {file:?}"))?,
-    };
-
-    // decompress if requested
-    if let Some(decompress) = &file.decompress {
-        // download to temp file before decompressing
-        let tmp_path = output.with_extension(decompress.to_string());
-        utils::download_file(url, &tmp_path).await?;
-        // decompress to temporary file
-        let tmp_path = utils::decompress_file(&tmp_path, file.decompress.clone())?;
-        std::fs::rename(tmp_path, &output)?;
-    } else {
-        utils::download_file(url, &output).await?;
-    };
-
-    Ok(file)
 }

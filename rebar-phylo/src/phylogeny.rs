@@ -1,11 +1,10 @@
-use crate::{newick, FromNewick, ToMermaid};
-use color_eyre::eyre::{eyre, Report, Result};
+use crate::{newick, FromNewick, ToDot, ToJson, ToMermaid};
+use color_eyre::eyre::{eyre, Report, Result, WrapErr};
 use itertools::Itertools;
 use num_traits::AsPrimitive;
 use petgraph::algo::is_cyclic_directed;
-use petgraph::dot::{Config, Dot};
-use petgraph::graph::{EdgeIndex, EdgeReference, Graph, NodeIndex};
-use petgraph::visit::{Dfs, EdgeRef, IntoNodeReferences};
+use petgraph::graph::{EdgeIndex, Graph, NodeIndex};
+use petgraph::visit::{Dfs, IntoNodeReferences};
 use petgraph::Direction;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -913,93 +912,6 @@ where
             None => Ok(false),
         }
     }
-
-    /// Returns the phylogeny as a [Dot](https://graphviz.org/doc/info/lang.html) graphviz String.
-
-    /// ```mermaid
-    /// ---
-    /// title: Toy1
-    /// ---
-    /// graph LR;
-    ///   A-->B;
-    ///   A-->C;
-    ///   A-.->D:::recombinant;
-    ///   B-.->D:::recombinant;
-    ///   D-->E;
-    ///   E-.->G:::recombinant;
-    ///   C-->F;
-    ///   C-.->G:::recombinant;
-    ///   F-.->G:::recombinant;
-    ///   classDef recombinant stroke:#ff7f0e;
-    /// ```
-    ///
-    /// ```rust
-    /// use rebar_phylo::examples::*;;
-    ///
-    /// let phylo = example_1();
-    /// println!("{}", phylo.to_dot()?);
-    /// # Ok::<(), color_eyre::eyre::Report>(())
-    /// ```
-    ///
-    /// ```test
-    /// digraph {
-    ///     rankdir="LR"
-    ///     0 [ label=A recombinant=false ]
-    ///     1 [ label=B recombinant=false ]
-    ///     2 [ label=C recombinant=false ]
-    ///     3 [ label=D recombinant=true color=orange]
-    ///     4 [ label=F recombinant=false ]
-    ///     5 [ label=G recombinant=true color=orange]
-    ///     6 [ label=E recombinant=false ]
-    ///     0 -> 1 [ parent=A child=B, style=solid, weight=1 ]
-    ///     0 -> 2 [ parent=A child=C, style=solid, weight=1 ]
-    ///     0 -> 3 [ parent=A child=D, style=dashed, weight=1 ]
-    ///     1 -> 3 [ parent=B child=D, style=dashed, weight=1 ]
-    ///     2 -> 4 [ parent=C child=F, style=solid, weight=1 ]
-    ///     2 -> 5 [ parent=C child=G, style=dashed, weight=1 ]
-    ///     3 -> 6 [ parent=D child=E, style=solid, weight=1 ]
-    ///     6 -> 5 [ parent=E child=G, style=dashed, weight=1 ]
-    ///     4 -> 5 [ parent=F child=G, style=dashed, weight=1 ]
-    /// }
-    /// ```
-    pub fn to_dot(&self) -> Result<String, Report> {
-        let config = &[Config::NodeNoLabel, Config::EdgeNoLabel];
-        let edges = |_, e: EdgeReference<'_, B>| {
-            let source = self
-                .get_node(&e.source())
-                .expect("Failed to get source node of edge reference {e:?}");
-            let target = self
-                .get_node(&e.target())
-                .expect("Failed to get target node of edge reference {e:?}");
-            let is_recombinant = self
-                .is_recombinant(target)
-                .expect("Failed to determine if target node {target} is a recombinant.");
-            format!(
-                "parent={source} child={target}, style={style}, weight={weight} ",
-                style = match is_recombinant {
-                    true => "dashed",
-                    false => "solid",
-                },
-                weight = e.weight(),
-            )
-        };
-        let nodes = |_, (_i, node): (NodeIndex, &N)| {
-            let is_recombinant = self
-                .is_recombinant(node)
-                .expect("Failed to determine if node {node} is a recombinant.");
-            let color = match is_recombinant {
-                true => "color=orange",
-                false => "",
-            };
-            format!("label={node} recombinant={is_recombinant} {color}")
-        };
-        let dot = Dot::with_attr_getters(&self.graph, config, &edges, &nodes).to_string();
-
-        // add direction LR
-        let dot = dot.replace("digraph {", "digraph {\n    rankdir=\"LR\"");
-
-        Ok(dot)
-    }
 }
 
 /// Returns a [`Phylogeny`] created from an iteratable object `I`.
@@ -1166,6 +1078,105 @@ where
         let data = newick::str_to_vec(newick, None, 0)?;
         let phylo = Phylogeny::from(data);
         Ok(phylo)
+    }
+}
+
+impl<N, B> ToDot for Phylogeny<N, B>
+where
+    N: Clone + Debug + Display + Eq + Hash + PartialEq,
+    B: AsPrimitive<f32> + Debug + Display,
+{
+    /// Returns the phylogeny as a [Dot](https://graphviz.org/doc/info/lang.html) graphviz String.
+    ///
+    /// ## Examples
+    #[doc = include_str!("../../assets/docs/example_1.md")]
+    /// ```rust
+    /// use rebar_phylo::{ToDot, example_1};
+    ///
+    /// let phylo = example_1();
+    /// println!("{}", phylo.to_dot()?);
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
+    fn to_dot(&self) -> Result<String, Report> {
+        let mut dot = String::new();
+        dot.push_str("digraph {\n");
+        dot.push_str("  rankdir=\"LR\"\n");
+
+        // start at root, construct a depth-first-search (Bfs)
+        let root_index = self.get_root_index()?;
+        let mut dfs = Dfs::new(&self.graph, root_index);
+
+        // keep track of seen nodes
+        let mut nodes_dot = String::new();
+        let mut edges_dot = String::new();
+        let mut nodes_seen = Vec::new();
+
+        // iterate through nodes in a depth-first search from root
+        while let Some(node_index) = dfs.next(&self.graph) {
+            // get node (parent/source) attributes
+            let parent = self.get_node(&node_index)?;
+            let parent_label = parent.to_string().replace('"', "");
+            let parent_i = node_index.index();
+            let parent_rec = self.is_recombinant(parent)?;
+            let parent_color = match parent_rec {
+                true => "#ff7f0e",
+                false => "#1f77b4",
+            };
+
+            nodes_seen.push(parent);
+            nodes_dot.push_str(&format!("  {parent_i} [ label=\"{parent_label}\" recombinant={parent_rec} color=\"{parent_color}\" ]\n"));
+
+            // iterate through children of node
+            self.get_children(parent, true)?.into_iter().try_for_each(|child| {
+                // get child node attributes
+                let child_index = self.get_node_index(child)?;
+                let child_label = child.to_string().replace('"', "");
+                let child_i = child_index.index();
+                let child_rec = self.is_recombinant(child)?;
+                let edge_index = self.graph.find_edge(node_index, child_index).unwrap();
+                let edge_length = self.graph.edge_weight(edge_index).unwrap();
+                let child_color = match child_rec {
+                    true => "#ff7f0e",
+                    false => "#1f77b4",
+                };
+                let edge_style = match child_rec {
+                    true => "dashed",
+                    false => "solid",
+                };
+
+                nodes_dot.push_str(&format!("  {child_i} [ label=\"{child_label}\" recombinant={child_rec} color=\"{child_color}\" ]\n"));
+                edges_dot.push_str(&format!("  {parent_i} -> {child_i} [ parent=\"{parent_label}\" child=\"{child_label}\", style={edge_style}, color=\"{child_color}\", weight={edge_length} ]\n"));
+                Ok::<(), Report>(())
+            })?;
+        }
+
+        // add any floating nodes with no connections
+        self.get_nodes()?.iter().filter(|node| !nodes_seen.contains(node)).for_each(|node| {
+            let node_index = self.get_node_index(node).expect("Failed to get node index: {node:?}");
+            let label = node.to_string().replace('"', "");
+            let i = node_index.index();
+            nodes_dot.push_str(&format!(
+                "  {i} [ label=\"{label}\" recombinant=false color=\"#1f77b4\" ]\n"
+            ));
+        });
+
+        dot.push_str(&nodes_dot);
+
+        dot.push_str(&edges_dot);
+        dot.push('}');
+        Ok(dot)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<N, B> ToJson for Phylogeny<N, B>
+where
+    N: Clone + Debug + Display + Eq + Hash + PartialEq + Serialize,
+    B: AsPrimitive<f32> + Debug + Display + Serialize,
+{
+    /// Returns a JSON [`str`] created from a [`Phylogeny`].
+    fn to_json(&self) -> Result<String, Report> {
+        serde_json::to_string_pretty(self).wrap_err("Failed to convert phylogeny to JSON.")
     }
 }
 

@@ -10,15 +10,15 @@ pub mod toy1;
 pub use attributes::*;
 #[doc(inline)]
 #[cfg(feature = "download")]
-pub use download::*;
+pub use download::{download, DownloadArgs};
 #[doc(inline)]
 pub use list::{list, ListArgs};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
-// // ----------------------------------------------------------------------------
-// // Dataset
+// ----------------------------------------------------------------------------
+// Dataset
 
 /// A collection of parent population sequences aligned to a reference.
 #[derive(Debug, PartialEq)]

@@ -3,12 +3,10 @@
 //! More description goes here!
 
 use crate::dataset::{Tag, VersionedFile};
-use crate::utils;
-use chrono::Local;
+use rebar_phylo::{ToDot, ToJson, ToMermaid};
+
 use color_eyre::eyre::{Report, Result, WrapErr};
 use std::fmt::Debug;
-use std::fs::File;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const ANNOTATIONS: &[&[&str]] = &[
@@ -50,23 +48,26 @@ pub fn annotations<P>(_tag: &Tag, output_dir: &P) -> Result<VersionedFile, Repor
 where
     P: AsRef<Path> + Clone + Debug,
 {
+    // create output dir
     let output_dir: PathBuf = output_dir.as_ref().into();
     std::fs::create_dir_all(&output_dir).wrap_err("Failed to create directory: {output_dir:?}")?;
-    let file_name = "annotations.tsv";
-    let path = output_dir.join(file_name);
 
-    // build annotations table
+    // create file content
+    let file_name = "annotations.tsv";
     let mut builder = tabled::builder::Builder::default();
     ANNOTATIONS.iter().for_each(|row| {
         builder.push_record(row.to_vec());
     });
-    let table = builder.build();
-    utils::write_table(&table, &path, None).wrap_err("Failed to write table: {path:?}")?;
+    let content = builder.build().to_string();
 
-    // create versioned file
+    // write file file content
+    let path = output_dir.join(file_name);
+    std::fs::write(&path, content.as_bytes()).wrap_err(format!("Failed to write: {path:?}"))?;
+
+    // return versioned file info
     let versioned_file = VersionedFile {
         local: file_name.into(),
-        date_created: Some(Local::now().into()),
+        date_created: Some(chrono::Local::now().into()),
         ..Default::default()
     };
 
@@ -89,19 +90,22 @@ pub fn reference<P>(_tag: &Tag, output_dir: &P) -> Result<VersionedFile, Report>
 where
     P: AsRef<Path> + Clone + Debug,
 {
+    // create output dir
     let output_dir: PathBuf = output_dir.as_ref().into();
     std::fs::create_dir_all(&output_dir).wrap_err("Failed to create directory: {output_dir:?}")?;
+
+    // create file content
     let file_name = "reference.fasta";
+    let content = REFERENCE;
+
+    // write file file content
     let path = output_dir.join(file_name);
+    std::fs::write(&path, content.as_bytes()).wrap_err(format!("Failed to write: {path:?}"))?;
 
-    let mut file = File::create(path.clone())
-        .wrap_err_with(|| format!("Unable to create reference: {path:?}"))?;
-    file.write_all(REFERENCE.as_bytes())
-        .wrap_err_with(|| format!("Unable to write reference: {path:?}"))?;
-
+    // return versioned file info
     let versioned_file = VersionedFile {
         local: file_name.into(),
-        date_created: Some(Local::now().into()),
+        date_created: Some(chrono::Local::now().into()),
         ..Default::default()
     };
 
@@ -117,78 +121,126 @@ where
 /// let versioned_file = toy1::populations(&Tag::Custom, &"test/dataset/toy1")?;
 /// # let path = std::path::PathBuf::from("test/dataset/toy1").join(versioned_file.local);
 /// # assert!(path.exists());
+/// # assert_eq!(std::fs::read_to_string(&path)?, toy1::POPULATIONS);
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
 pub fn populations<P>(_tag: &Tag, output_dir: &P) -> Result<VersionedFile, Report>
 where
     P: AsRef<Path> + Clone + Debug,
 {
+    // create output dir
     let output_dir: PathBuf = output_dir.as_ref().into();
     std::fs::create_dir_all(&output_dir).wrap_err("Failed to create directory: {output_dir:?}")?;
+
+    // create file content
     let file_name = "populations.fasta";
+    let content = POPULATIONS;
+
+    // write file file content
     let path = output_dir.join(file_name);
+    std::fs::write(&path, content.as_bytes()).wrap_err(format!("Failed to write: {path:?}"))?;
 
-    let mut file = File::create(path.clone())
-        .wrap_err_with(|| format!("Unable to create populations: {path:?}"))?;
-    file.write_all(POPULATIONS.as_bytes())
-        .wrap_err_with(|| format!("Unable to write populations: {path:?}"))?;
-
+    // return versioned file info
     let versioned_file = VersionedFile {
         local: file_name.into(),
-        date_created: Some(Local::now().into()),
+        date_created: Some(chrono::Local::now().into()),
         ..Default::default()
     };
 
     Ok(versioned_file)
 }
 
-// // ----------------------------------------------------------------------------
-// // Edge Cases
-// // ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// Edge Cases
+// ----------------------------------------------------------------------------
 
-// /// Recombinant population edge cases.
-// pub mod edge_cases {
+/// Create and write Toy1 edge cases.
+///
+/// ## Examples
+///
+/// ```rust
+/// use rebar::dataset::{Tag, toy1};
+/// let versioned_file = toy1::edge_cases(&Tag::Custom, &"test/dataset/toy1")?;
+/// # let path = std::path::PathBuf::from("test/dataset/toy1").join(versioned_file.local);
+/// # assert!(path.exists());
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// ```
+#[cfg(feature = "serde")]
+pub fn edge_cases<P>(_tag: &Tag, output_dir: &P) -> Result<VersionedFile, Report>
+where
+    P: AsRef<Path> + Clone + Debug,
+{
+    // create output dir
+    let output_dir: PathBuf = output_dir.as_ref().into();
+    std::fs::create_dir_all(&output_dir).wrap_err("Failed to create directory: {output_dir:?}")?;
 
-//     use crate::run;
+    let file_name = "edge_cases.json";
+    let _path = output_dir.join(file_name);
+    // todo!() once run args are back
+    // let edge_cases = RunArgs::default();
+    // let content = serde_json::to_string_pretty(edge_cases).wrap_err(format!("Failed to convert phylogeny to JSON."))?;
+    // std::fs::write(&path, content.as_bytes()).wrap_err(format!("Failed to write: {path:?}"))?;
 
-//     /// Returns recombinant edge cases.
-//     ///
-//     /// ```rust
-//     /// use rebar::dataset::toy1;
-//     ///
-//     /// let edge_cases = toy1::edge_cases::get();
-//     /// # Ok::<(), color_eyre::eyre::Report>(())
-//     /// ```
-//     pub fn get() -> Vec<run::Args> {
-//         Vec::new()
-//     }
-// }
+    // return versioned file info
+    let versioned_file = VersionedFile {
+        local: file_name.into(),
+        date_created: Some(chrono::Local::now().into()),
+        ..Default::default()
+    };
 
-// // ----------------------------------------------------------------------------
-// // Phylogeny
-// // ----------------------------------------------------------------------------
+    Ok(versioned_file)
+}
 
-// /// Phylogenetic representation as an Ancestral Recombination Graph (ARG).
-// pub mod phylogeny {
+// ----------------------------------------------------------------------------
+// Phylogeny
+// ----------------------------------------------------------------------------
 
-//     use crate::Phylogeny;
-//     use color_eyre::eyre::{Report, Result};
+/// Create and write Toy1 phylogeny.
+///
+/// ## Examples
+///
+/// ```rust
+/// use rebar::dataset::{Tag, toy1};
+/// let versioned_file = toy1::phylogeny(&Tag::Custom, &"test/dataset/toy1")?;
+/// # let path = std::path::PathBuf::from("test/dataset/toy1").join(versioned_file.local);
+/// # assert!(path.exists());
+/// # Ok::<(), color_eyre::eyre::Report>(())
+/// ```
+#[cfg(feature = "phylo")]
+pub fn phylogeny<P>(_tag: &Tag, output_dir: &P) -> Result<VersionedFile, Report>
+where
+    P: AsRef<Path> + Clone + Debug,
+{
+    // create output dir
+    let output_dir: PathBuf = output_dir.as_ref().into();
+    std::fs::create_dir_all(&output_dir).wrap_err("Failed to create directory: {output_dir:?}")?;
 
-//     /// Returns the phylogeny of toy1 populations.
-//     pub fn get() -> Result<Phylogeny<&'static str, u16>, Report> {
-//         let data = vec![
-//             ("A", "B", 1),
-//             ("A", "C", 1),
-//             ("A", "D", 1),
-//             ("B", "D", 1),
-//             ("C", "F", 1),
-//             ("C", "G", 1),
-//             ("D", "E", 1),
-//             ("E", "G", 1),
-//             ("E", "H", 1),
-//             ("F", "G", 1),
-//         ];
+    let phylogeny = rebar_phylo::example_1();
 
-//         Phylogeny::from_vec(data)
-//     }
-// }
+    // (optional) mermaid content
+    let content = phylogeny.to_mermaid()?;
+    let file_name = "phylogeny.mermaid";
+    let path = output_dir.join(file_name);
+    std::fs::write(&path, content.as_bytes()).wrap_err(format!("Failed to write: {path:?}"))?;
+
+    // (optional) dot content
+    let file_name = "phylogeny.dot";
+    let path = output_dir.join(file_name);
+    let content = phylogeny.to_dot()?;
+    std::fs::write(&path, content.as_bytes()).wrap_err(format!("Failed to write: {path:?}"))?;
+
+    // (mandatory) json content
+    let file_name = "phylogeny.json";
+    let path = output_dir.join(file_name);
+    let content = phylogeny.to_json()?;
+    std::fs::write(&path, content.as_bytes()).wrap_err(format!("Failed to write: {path:?}"))?;
+
+    // return versioned file info
+    let versioned_file = VersionedFile {
+        local: file_name.into(),
+        date_created: Some(chrono::Local::now().into()),
+        ..Default::default()
+    };
+
+    Ok(versioned_file)
+}

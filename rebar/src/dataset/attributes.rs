@@ -44,12 +44,14 @@ pub struct Attributes {
     pub version: String,
     /// Dataset version [Tag].
     pub tag: Tag,
-    /// Optional reference genome file.
+    /// Reference genome file.
     pub reference: Option<VersionedFile>,
-    /// Optional population alignment file.
+    /// Population alignment file.
     pub populations: Option<VersionedFile>,
-    /// Optional genome annotations.
+    /// Genome annotations.
     pub annotations: Option<VersionedFile>,
+    /// Phylogeny.
+    pub phylogeny: Option<VersionedFile>,
     /// Additional files that are dataset-specific.
     ///
     /// For example, in the [SARS-CoV-2](Name::SarsCov2) dataset, the [alias key](https://github.com/cov-lineages/pango-designation/blob/master/pango_designation/alias_key.json) maps aliases to lineage names.
@@ -78,6 +80,7 @@ impl Attributes {
             reference: None,
             populations: None,
             annotations: None,
+            phylogeny: None,
             misc: BTreeMap::new(),
         }
     }
@@ -526,5 +529,84 @@ impl VersionedFile {
             date_downloaded: None,
             decompress: None,
         }
+    }
+
+    /// Downloads a [`VersionedFile`] to a output directory, and returns a new [`VersionedFile`] with an updated `date_downloaded` and/or `date_created`.
+    ///
+    /// ## Arguments
+    ///
+    /// - `output_dir` - Output directory path where file should be downloaded to.
+    ///
+    /// ## Examples
+    ///
+    /// Without decompression.
+    ///
+    /// ```rust
+    /// # use tokio_test::{block_on, assert_ok};
+    /// use rebar::dataset::VersionedFile;
+    ///
+    /// let url = "https://raw.githubusercontent.com/nextstrain/ncov/v13/data/references_sequences.fasta";
+    /// let local = "reference.fasta";
+    /// let versioned_file = VersionedFile {url: Some(url.into()), local: local.into(), .. Default::default()};
+    ///
+    /// let output_dir = "test/dataset/download_versioned_file";
+    /// # assert_ok!(block_on(async {
+    /// let output_file = versioned_file.download(&output_dir).await?;
+    /// # let path = std::path::PathBuf::from(output_dir).join(output_file.local);
+    /// # assert!(path.exists());
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// # }));
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
+    ///
+    /// With decompression.
+    ///
+    /// ```rust
+    /// # use tokio_test::{block_on, assert_ok};
+    /// # use rebar::dataset::VersionedFile;
+    /// use rebar::utils::Decompress;
+    ///
+    /// let url = "https://raw.githubusercontent.com/corneliusroemer/pango-sequences/a8596a6/data/pango-consensus-sequences_genome-nuc.fasta.zst";
+    /// let local = "populations.fasta";
+    /// let decompress = Decompress::Zst;
+    /// let versioned_file = VersionedFile {url: Some(url.into()), local: local.into(), decompress: Some(decompress), .. Default::default()};
+    ///
+    /// let output_dir = "test/dataset/download_versioned_file";
+    /// # assert_ok!(block_on(async {
+    /// let output_file = versioned_file.download(&output_dir).await?;
+    /// # let path = std::path::PathBuf::from(output_dir).join(output_file.local);
+    /// # assert!(path.exists());
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// # }));
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
+    #[cfg(feature = "download")]
+    pub async fn download<P>(self, output_dir: &P) -> Result<Self, Report>
+    where
+        P: AsRef<Path> + Debug,
+    {
+        // create output dir if needed
+        std::fs::create_dir_all(output_dir)?;
+        let output = output_dir.as_ref().to_owned().join(&self.local);
+
+        // make sure a URL exists
+        let url = match &self.url {
+            Some(url) => url.as_str(),
+            None => Err(eyre!("Failed to download versioned file, URL is missing: {self:?}"))?,
+        };
+
+        // decompress if requested
+        if let Some(decompress) = &self.decompress {
+            // download to temp file before decompressing
+            let tmp_path = output.with_extension(decompress.to_string());
+            utils::download_file(url, &tmp_path).await?;
+            // decompress to temporary file
+            let tmp_path = utils::decompress_file(&tmp_path, self.decompress.clone())?;
+            std::fs::rename(tmp_path, &output)?;
+        } else {
+            utils::download_file(url, &output).await?;
+        };
+
+        Ok(self)
     }
 }

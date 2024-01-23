@@ -32,6 +32,16 @@ pub trait FromNewick {
         Self: Sized;
 }
 
+/// Returns a [DOT](https://graphviz.org/doc/info/lang.html) [`str`] created from an object.
+pub trait ToDot {
+    fn to_dot(&self) -> Result<String, Report>;
+}
+
+/// Returns a JSON [`str`] created from an object.
+pub trait ToJson {
+    fn to_json(&self) -> Result<String, Report>;
+}
+
 /// Returns a [Mermaid](https://mermaid.js.org/) [`str`] created from an object.
 pub trait ToMermaid {
     fn to_mermaid(&self) -> Result<String, Report>;

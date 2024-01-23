@@ -9,7 +9,7 @@ cli      = ["dep:clap", "dep:env_logger", "serde"]
 doc      = ["test"]
 download = ["dep:reqwest", "dep:tempfile", "reqwest/json", "reqwest/default-tls", "serde"]
 native-tls-vendored = ["dep:reqwest", "reqwest/native-tls-vendored"]
-phylo    = ["dep:rebar-phylo"]
+phylo    = ["dep:rebar-phylo", "serde"]
 serde    = ["dep:serde", "dep:serde_json", "chrono/serde", "serde/derive", "serde_json/std", "rebar-phylo/serde"]
 test     = ["dep:tempfile", "dep:tokio-test"]
 
