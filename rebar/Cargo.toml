@@ -4,12 +4,12 @@ version = "0.3.0"
 edition = "2021"
 
 [features]
-default  = ["cli", "download", "phylo"]
-cli      = ["dep:clap", "dep:env_logger", "serde"]
-doc      = ["test"]
+default  = ["cli", "download", "rayon"]
+cli      = ["dep:clap", "download", "dep:env_logger", "serde"]
+doc      = ["default", "test"]
 download = ["dep:reqwest", "dep:tempfile", "reqwest/json", "reqwest/default-tls", "serde"]
 native-tls-vendored = ["dep:reqwest", "reqwest/native-tls-vendored"]
-phylo    = ["dep:rebar-phylo", "serde"]
+rayon    = ["dep:rayon", "indicatif/rayon"]
 serde    = ["dep:serde", "dep:serde_json", "chrono/serde", "serde/derive", "serde_json/std", "rebar-phylo/serde"]
 test     = ["dep:tempfile", "dep:tokio-test"]
 
@@ -21,24 +21,21 @@ color-eyre      = { version = "0.6.2",   default-features = false }
 # either          = { version = "1.9.0",   default-features = false }
 env_logger      = { version = "0.10.0",  default-features = false, optional = true }
 # image           = { version = "0.24.6",  default-features = false }
-# indicatif       = { version = "0.17.5",  default-features = false, features = ["rayon"]}
+indicatif       = { version = "0.17.5",  default-features = false }
 indoc           = { version = "2.0.4",   default-features = false }
 # itertools       = { version = "0.12.0",  default-features = false, features = ["use_std"] }
 log             = { version = "0.4.17",  default-features = false }
-# noodles         = { version = "0.59.0",  default-features = false, features = ["core", "fasta"]}
-# openssl         = { version = "0.10.60", default-features = false, features = ["vendored"], optional = true}
+noodles         = { version = "0.59.0",  default-features = false, features = ["core", "fasta"]}
 # raqote          = { version = "0.8.2",   default-features = false, features = ["png"]}
 # rand            = { version = "0.8.5",   default-features = false, features = ["std", "std_rng"] }
-# rayon           = { version = "1.7.0",   default-features = false }
-rebar-phylo     = { version = "0.3.0",   default-features = false, optional = true, path = "../rebar-phylo" }
-#reqwest         = { version = "0.11.18", default-features = false, features = ["native-tls-vendored"], optional = true }
+rayon           = { version = "1.7.0",   default-features = false, optional = true }
+rebar-phylo     = { version = "0.3.0",   default-features = false, path = "../rebar-phylo" }
 reqwest         = { version = "0.11.18", default-features = false, optional = true }
 # rustix          = { version = "0.38.25", default-features = false }
 # rusttype        = { version = "0.9.3",   default-features = false, features = ["std"]}
 semver          = { version = "1.0.19",  default-features = false, features = ["std"] }
 serde           = { version = "1.0.163", default-features = false, optional = true }
 serde_json      = { version = "1.0.96",  default-features = false, optional = true }
-# structdoc       = { version = "0.1.4",   default-features = false, features = ["structdoc-derive"]}
 strum           = { version = "0.25",    default-features = false, features = ["derive"] }
 tabled          = { version = "0.15.0",  default-features = true, features = ["std"] }
 tempfile        = { version = "3.8.1",   default-features = false, optional = true }

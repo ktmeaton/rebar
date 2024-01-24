@@ -3,7 +3,8 @@
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod dataset;
-// pub mod run;
+pub mod run;
+pub mod sequence;
 // pub mod table;
 pub mod utils;
 

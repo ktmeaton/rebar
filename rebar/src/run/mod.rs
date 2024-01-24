@@ -1,118 +1,125 @@
 //! Run recombination detection algorithm on input sequences and populations.
 
+#[cfg(feature = "cli")]
 use clap::{Args as ClapArgs, Parser};
 use color_eyre::eyre::{Report, Result, WrapErr};
-use either::*;
+//use either::*;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::{
+    fmt::Debug,
+    path::{Path, PathBuf},
+};
 
 /// ---------------------------------------------------------------------------
 /// Structs
 /// ---------------------------------------------------------------------------
 
 /// Detect recombination in a dataset population and/or input alignment.
-#[derive(Clone, Debug, Deserialize, Parser, Serialize)]
-#[clap(verbatim_doc_comment)]
-pub struct Args {
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "cli", derive(Parser))]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+pub struct RunArgs {
     /// Dataset directory.
-    #[clap(short = 'd', long, required = true)]
-    #[serde(skip_serializing_if = "Args::is_default_dataset_dir", skip_deserializing)]
+    #[cfg_attr(feature = "cli", clap(short = 'd', long, required = true))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip_serializing_if = "RunArgs::is_default_dataset_dir", skip_deserializing)
+    )]
     pub dataset_dir: PathBuf,
 
-    #[command(flatten)]
-    #[serde(skip_serializing_if = "Args::is_default_input", skip_deserializing)]
+    #[cfg_attr(feature = "cli", command(flatten))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip_serializing_if = "RunArgs::is_default_input", skip_deserializing)
+    )]
     pub input: Input,
 
-    // Hidden attribute, will be used for edge cases.
-    #[arg(hide = true)]
-    pub population: Option<String>,
-
     /// Restrict parent search to just these candidate parents.
-    #[arg(long, value_delimiter = ',')]
+    #[cfg_attr(feature = "cli", arg(long, value_delimiter = ','))]
     pub parents: Option<Vec<String>>,
 
     /// Remove these populations from the dataset.
     ///
     /// Regardless of whether you use '*' or not, all descendants of the
     /// specified populations will be removed.
-    #[arg(short = 'k', long)]
+    #[cfg_attr(feature = "cli", arg(short = 'k', long))]
     pub knockout: Option<Vec<String>>,
 
     /// Number of bases to mask at the 5' and 3' ends.
     ///
     /// Comma separated. Use --mask 0,0 to disable masking.
-    #[arg(short = 'm', long, default_values_t = Args::default().mask)]
-    #[arg(long, value_delimiter = ',')]
+    #[cfg_attr(feature = "cli", arg(short = 'm', long, value_delimiter = ',', default_values_t = RunArgs::default().mask))]
     pub mask: Vec<usize>,
 
     /// Maximum number of search iterations to find each parent.
-    #[arg(short = 'i', long, default_value_t = Args::default().max_iter)]
+    #[cfg_attr(feature = "cli", arg(short = 'i', long, default_value_t = RunArgs::default().max_iter))]
     pub max_iter: usize,
 
     /// Maximum number of parents.
-    #[arg(long, default_value_t = Args::default().max_parents)]
+    #[cfg_attr(feature = "cli", arg(long, default_value_t = RunArgs::default().max_parents))]
     pub max_parents: usize,
 
     /// Minimum number of parents.
-    #[arg(long, default_value_t = Args::default().min_parents)]
+    #[cfg_attr(feature = "cli", arg(long, default_value_t = RunArgs::default().min_parents))]
     pub min_parents: usize,
 
     /// Minimum number of consecutive bases in a parental region.
-    #[arg(short = 'c', long, default_value_t = Args::default().min_consecutive)]
+    #[cfg_attr(feature = "cli", arg(short = 'c', long, default_value_t = RunArgs::default().min_consecutive))]
     pub min_consecutive: usize,
 
     /// Minimum length of a parental region.
-    #[arg(short = 'l', long, default_value_t = Args::default().min_length)]
+    #[cfg_attr(feature = "cli", arg(short = 'l', long, default_value_t = RunArgs::default().min_length))]
     pub min_length: usize,
 
     /// Minimum number of substitutions in a parental region.
-    #[arg(short = 's', long, default_value_t = Args::default().min_subs)]
+    #[cfg_attr(feature = "cli", arg(short = 's', long, default_value_t = RunArgs::default().min_subs))]
     pub min_subs: usize,
 
     /// Run a naive search, which does not use information about edge cases or known recombinant parents.
-    #[arg(short = 'u', long, default_value_t = Args::default().naive)]
+    #[cfg_attr(feature = "cli", arg(short = 'u', long, default_value_t = RunArgs::default().naive))]
     pub naive: bool,
 
     /// Output directory.
     ///
     /// If the directory does not exist, it will be created.
-    #[clap(short = 'o', long, required = true)]
-    #[serde(skip_serializing_if = "Args::is_default_output_dir", skip_deserializing)]
+    #[cfg_attr(feature = "cli", clap(short = 'o', long, required = true))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip_serializing_if = "RunArgs::is_default_output_dir", skip_deserializing)
+    )]
     pub output_dir: PathBuf,
 
     /// Number of CPU threads to use.
-    #[clap(short = 't', long, default_value_t = Args::default().threads)]
-    #[serde(skip)]
+    #[cfg_attr(feature = "cli", clap(short = 't', long, default_value_t = RunArgs::default().threads))]
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub threads: usize,
 }
 
-impl Default for Args {
+impl Default for RunArgs {
     fn default() -> Self {
-        Args {
+        RunArgs {
             dataset_dir: PathBuf::new(),
             input: Input::default(),
             knockout: None,
             mask: vec![100, 200],
             max_iter: 3,
-            min_parents: 2,
             max_parents: 2,
             min_consecutive: 3,
             min_length: 500,
+            min_parents: 2,
             min_subs: 1,
             naive: false,
             output_dir: PathBuf::new(),
             parents: None,
-            population: None,
             threads: 1,
         }
     }
 }
 
-impl Args {
+impl RunArgs {
     pub fn new() -> Self {
-        Args {
+        RunArgs {
             dataset_dir: PathBuf::new(),
             input: Input::default(),
             knockout: None,
@@ -125,7 +132,6 @@ impl Args {
             min_subs: 0,
             output_dir: PathBuf::new(),
             parents: None,
-            population: None,
             threads: 0,
             naive: false,
         }
@@ -133,20 +139,20 @@ impl Args {
 
     /// Check if input is default.
     pub fn is_default_dataset_dir(path: &Path) -> bool {
-        path == Args::default().dataset_dir
+        path == RunArgs::default().dataset_dir
     }
 
     /// Check if input is default.
     pub fn is_default_input(input: &Input) -> bool {
-        input == &Args::default().input
+        input == &RunArgs::default().input
     }
     /// Check if output directory is default.
     pub fn is_default_output_dir(path: &Path) -> bool {
-        path == Args::default().output_dir
+        path == RunArgs::default().output_dir
     }
 
-    /// Override Args for edge case handling of particular recombinants.
-    pub fn apply_edge_case(&self, new: &Args) -> Result<Args, Report> {
+    /// Override RunArgs for edge case handling of particular recombinants.
+    pub fn apply_edge_case(&self, new: &RunArgs) -> Result<RunArgs, Report> {
         let mut output = self.clone();
 
         output.max_iter = new.max_iter;
@@ -160,38 +166,38 @@ impl Args {
         Ok(output)
     }
 
-    /// Read args from file.
-    ///
-    /// Returns an Either with options:
-    ///     Left: Args
-    ///     Right: Vector of Args
-    pub fn read(path: &Path, multiple: bool) -> Result<Either<Args, Vec<Args>>, Report> {
+    /// Reads [`RunArgs`] from a JSON file.
+    #[cfg(feature = "serde")]
+    pub fn read<P>(path: &P) -> Result<Vec<RunArgs>, Report>
+    where
+        P: AsRef<Path> + Debug,
+    {
         let input = std::fs::read_to_string(path)
-            .wrap_err_with(|| format!("Failed to read file: {path:?}."))?;
-        let output: Vec<Args> = serde_json::from_str(&input)
-            .wrap_err_with(|| format!("Failed to parse file: {path:?}"))?;
-
-        if multiple {
-            Ok(Right(output))
-        } else {
-            Ok(Left(output[0].clone()))
-        }
+            .wrap_err_with(|| format!("Failed to read run arguments: {path:?}."))?;
+        let run_args = serde_json::from_str(&input)
+            .wrap_err_with(|| format!("Failed to deserialize run arguments: {input}"))?;
+        Ok(run_args)
     }
 
-    /// Write args to file.
-    pub fn write(args: &[Args], path: &Path) -> Result<(), Report> {
-        // create file
-        let mut file =
-            File::create(path).wrap_err_with(|| format!("Failed to create file: {path:?}"))?;
-
-        // parse to string
-        let args = serde_json::to_string_pretty(args)
-            .wrap_err_with(|| format!("Failed to parse: {args:?}"))?;
-
-        // write to file
-        file.write_all(format!("{}\n", args).as_bytes())
-            .wrap_err_with(|| format!("Failed to write file: {path:?}"))?;
-
+    /// Write [`RunArgs`] to a JSON file.
+    ///
+    /// ## Examples
+    ///
+    /// ```rust
+    /// use rebar::RunArgs;
+    /// RunArgs::write(RunArgs::default(), &"test/run/RunArgs/run_args.json")?;
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
+    #[cfg(feature = "serde")]
+    pub fn write<P>(&self, path: &P) -> Result<(), Report>
+    where
+        P: AsRef<Path> + Debug,
+    {
+        crate::utils::create_parent_dir(path)?;
+        let output = serde_json::to_string_pretty(self)
+            .wrap_err(format!("Failed to serialize run arguments: {self:?}"))?;
+        std::fs::write(path, output)
+            .wrap_err(format!("Failed to write run arguments: {path:?}"))?;
         Ok(())
     }
 }

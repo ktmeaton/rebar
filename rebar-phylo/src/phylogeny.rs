@@ -1,4 +1,4 @@
-use crate::{newick, FromNewick, ToDot, ToJson, ToMermaid};
+use crate::{newick, FromJson, FromNewick, ToDot, ToJson, ToMermaid};
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};
 use itertools::Itertools;
 use num_traits::AsPrimitive;
@@ -1037,6 +1037,19 @@ where
             .into_iter()
             .map(|(n1, n2, b)| (n1.clone(), n2.clone(), b.clone()))
             .collect()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<N, B> FromJson for Phylogeny<N, B>
+where
+    N: for<'de> Deserialize<'de>,
+    B: for<'de> Deserialize<'de>,
+{
+    fn from_json(json: &str) -> Result<Self, Report> {
+        let phylogeny = serde_json::from_str(json)
+            .wrap_err_with(|| format!("Failed to deserialize phylogeny: {json}"))?;
+        Ok(phylogeny)
     }
 }
 

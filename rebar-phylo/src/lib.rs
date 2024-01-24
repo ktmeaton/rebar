@@ -20,9 +20,18 @@ pub use phylogeny::Phylogeny;
 // Traits
 // ----------------------------------------------------------------------------
 
+/// Returns an object created from a JSON [`str`].
+pub trait FromJson {
+    fn from_json(json: &str) -> Result<Self, Report>
+    where
+        Self: Sized;
+}
+
 /// Returns an object created from a [Mermaid](https://mermaid.js.org/) [`str`].
 pub trait FromMermaid {
-    fn from_mermaid(mermaid: &str) -> Result<String, Report>;
+    fn from_mermaid(mermaid: &str) -> Result<Self, Report>
+    where
+        Self: Sized;
 }
 
 /// Returns an object created from a [Newick](https://en.wikipedia.org/wiki/Newick_format) [`str`].

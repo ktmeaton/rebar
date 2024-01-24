@@ -174,12 +174,15 @@ where
     let output_dir: PathBuf = output_dir.as_ref().into();
     std::fs::create_dir_all(&output_dir).wrap_err("Failed to create directory: {output_dir:?}")?;
 
+    // create file content
     let file_name = "edge_cases.json";
-    let _path = output_dir.join(file_name);
-    // todo!() once run args are back
-    // let edge_cases = RunArgs::default();
-    // let content = serde_json::to_string_pretty(edge_cases).wrap_err(format!("Failed to convert phylogeny to JSON."))?;
-    // std::fs::write(&path, content.as_bytes()).wrap_err(format!("Failed to write: {path:?}"))?;
+    let edge_cases: Vec<crate::run::RunArgs> = Vec::new();
+
+    // write file file content
+    let path = output_dir.join(file_name);
+    let content = serde_json::to_string_pretty(&edge_cases)
+        .wrap_err(format!("Failed to serialize edge cases: {edge_cases:?}"))?;
+    std::fs::write(&path, content).wrap_err(format!("Failed to write: {path:?}"))?;
 
     // return versioned file info
     let versioned_file = VersionedFile {
@@ -206,7 +209,6 @@ where
 /// # assert!(path.exists());
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
-#[cfg(feature = "phylo")]
 pub fn phylogeny<P>(_tag: &Tag, output_dir: &P) -> Result<VersionedFile, Report>
 where
     P: AsRef<Path> + Clone + Debug,

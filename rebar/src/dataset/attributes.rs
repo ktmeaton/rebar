@@ -1,6 +1,6 @@
 //! Metadata to uniquely identify a dataset ([Name], [Tag]) and faciliate reproducibility ([Summary]).
 
-use crate::utils;
+use crate::{sequence, utils};
 
 use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};
@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::default::Default;
 use std::fmt::{Debug, Formatter};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum::EnumIter;
@@ -21,11 +20,6 @@ use strum::EnumIter;
 // ----------------------------------------------------------------------------
 
 /// [`Attributes`] of a [`Dataset`] and its source files.
-///
-/// ## Generics
-///
-/// - `D` - Date, recommended [`chrono::NaiveDate`].
-/// - `P` - File path.
 ///
 /// ## Examples
 ///
@@ -44,13 +38,15 @@ pub struct Attributes {
     pub version: String,
     /// Dataset version [Tag].
     pub tag: Tag,
+    /// Sequence alphabet
+    pub alphabet: sequence::Alphabet,
     /// Reference genome file.
-    pub reference: Option<VersionedFile>,
+    pub reference: VersionedFile,
     /// Population alignment file.
-    pub populations: Option<VersionedFile>,
-    /// Genome annotations.
+    pub populations: VersionedFile,
+    /// Optional Genome annotations.
     pub annotations: Option<VersionedFile>,
-    /// Phylogeny.
+    /// Optional Phylogeny.
     pub phylogeny: Option<VersionedFile>,
     /// Additional files that are dataset-specific.
     ///
@@ -63,22 +59,17 @@ impl Default for Attributes {
         Self::new()
     }
 }
+
 impl Attributes {
     /// Returns new [`Attributes`] with empty or default values.
-    ///
-    /// ```rust
-    /// use rebar::dataset::Attributes;
-    /// use chrono::NaiveDate;
-    ///
-    /// let attributes = Attributes::new();
-    /// ```
     pub fn new() -> Self {
         Attributes {
             version: format!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
             tag: Tag::default(),
             name: Name::default(),
-            reference: None,
-            populations: None,
+            alphabet: sequence::Alphabet::default(),
+            reference: VersionedFile::default(),
+            populations: VersionedFile::default(),
             annotations: None,
             phylogeny: None,
             misc: BTreeMap::new(),
@@ -90,16 +81,17 @@ impl Attributes {
     /// ## Examples
     ///
     /// ```rust
-    /// use rebar::dataset::Attributes;
-    /// use chrono::NaiveDate;
+    /// use rebar::dataset::*;
     ///
+    /// // write attributes
     /// let attr_out = Attributes::default();
-    /// let file     = tempfile::NamedTempFile::new()?;
-    /// let path     = file.path();
-    /// attr_out.write(&path)?;
+    /// let path = "test/dataset/attributes/default.json";
+    /// Attributes::write(&attr_out, &path)?;
     ///
+    /// // read attributes
     /// let attr_in = Attributes::read(&path)?;
     /// # assert_eq!(attr_in, attr_out);
+    /// # assert!(attr_out.write(&"/root").is_err());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     #[cfg(feature = "serde")]
@@ -107,11 +99,10 @@ impl Attributes {
     where
         P: AsRef<Path> + Debug,
     {
-        let file = std::fs::File::open(path)
-            .wrap_err(eyre!("Failed to open Attributes file: {path:?}."))?;
-        let reader = std::io::BufReader::new(file);
-        let attributes = serde_json::from_reader(reader)
-            .wrap_err(eyre!("Failed to deserialize Attributes file: {path:?}."))?;
+        let input = std::fs::read_to_string(path)
+            .wrap_err_with(|| format!("Failed to read attributes: {path:?}."))?;
+        let attributes = serde_json::from_str(&input)
+            .wrap_err_with(|| format!("Failed to deserialize attributes: {input}"))?;
         Ok(attributes)
     }
 
@@ -119,15 +110,14 @@ impl Attributes {
     ///
     /// ## Examples
     ///
+    /// ### Default
+    ///
     /// ```rust
-    /// use rebar::dataset::Attributes;
-    /// use chrono::NaiveDate;
+    /// use rebar::dataset::*;
     ///
     /// let attributes = Attributes::default();
-    /// let file       = tempfile::NamedTempFile::new()?;
-    /// let path       = file.path();
-    ///
-    /// attributes.write(&path)?;
+    /// let path       = "test/dataset/attributes/default.json";
+    /// Attributes::write(&attributes, &path)?;
     /// # assert!(attributes.write(&"/root").is_err());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
@@ -137,14 +127,9 @@ impl Attributes {
         P: AsRef<Path> + Debug,
     {
         utils::create_parent_dir(path)?;
-
-        // write file
-        let mut file = std::fs::File::create(path)
-            .wrap_err(eyre!("Failed to create Attributes file: {path:?}"))?;
         let output = serde_json::to_string_pretty(self)
-            .wrap_err(eyre!("Failed to serialize Attributes: {self:?}"))?;
-        file.write_all(format!("{}\n", output).as_bytes())
-            .wrap_err(eyre!("Failed to write Attributes file: {path:?}"))?;
+            .wrap_err(format!("Failed to serialize attributes: {self:?}"))?;
+        std::fs::write(path, &output).wrap_err(format!("Failed to write attributes: {output}"))?;
         Ok(())
     }
 }
@@ -338,107 +323,6 @@ impl FromStr for Tag {
 // ----------------------------------------------------------------------------
 // Dataset Compatibility
 
-/// Returns the [`Compatibility`] of a named [`Dataset`].
-///
-///  ## Examples
-///
-/// ```
-/// use rebar::dataset::{get_compatibility, Name};
-/// use chrono::NaiveDate;
-///
-/// get_compatibility(&Name::SarsCov2)?;
-/// get_compatibility(&Name::Toy1)?;
-/// get_compatibility(&Name::Custom)?;
-/// # Ok::<(), color_eyre::eyre::Report>(())
-/// ```
-pub fn get_compatibility(name: &Name) -> Result<Compatibility, Report> {
-    let mut compatibility = Compatibility::new();
-    #[allow(clippy::single_match)]
-    match name {
-        Name::SarsCov2 => {
-            compatibility.min_date =
-                Some(DateTime::parse_from_rfc3339("2023-02-09T00:00:00Z")?.into())
-        }
-        Name::Toy1 => compatibility.cli_version = Some(">=0.2.0".to_string()),
-        //Name::Custom => compatibility.cli_version = Some(">=0.3.0".to_string()),
-        _ => compatibility.cli_version = None,
-    }
-    Ok(compatibility)
-}
-
-/// Returns true if the [`Dataset`] [`Name`] and [`Tag`] are compatible with each other, and the CLI version.
-///
-/// ## Examples
-///
-/// ```
-/// use rebar::dataset::{is_compatible, Name, Tag};
-/// use std::str::FromStr;
-///
-/// assert_eq!(true,  is_compatible(Some(&Name::SarsCov2), Some(&Tag::Latest))?);
-/// assert_eq!(true,  is_compatible(Some(&Name::SarsCov2), Some(&Tag::from_str("2023-06-06")?))?);
-/// assert_eq!(false, is_compatible(Some(&Name::SarsCov2), Some(&Tag::from_str("2023-02-08")?))?);
-/// assert_eq!(true,  is_compatible(Some(&Name::Toy1),     None)?);
-/// # Ok::<(), color_eyre::eyre::Report>(())
-/// ```
-pub fn is_compatible(name: Option<&Name>, tag: Option<&Tag>) -> Result<bool, Report> {
-    let compatibility = match name {
-        Some(name) => get_compatibility(name)?,
-        None => Compatibility::default(),
-    };
-
-    // Check CLI Version
-    if let Some(cli_version) = compatibility.cli_version {
-        let current_version = semver::Version::parse(env!("CARGO_PKG_VERSION"))?;
-        let required_version = semver::VersionReq::parse(&cli_version)?;
-        if !required_version.matches(&current_version) {
-            warn!(
-                "CLI version incompatibility.
-                Current version {current_version} does not satisfy the required version {required_version}",
-                current_version=current_version.to_string()
-                );
-            return Ok(false);
-        }
-    }
-    // Check Tag
-    match tag {
-        Some(Tag::Latest) => {
-            if let Some(max_date) = compatibility.max_date {
-                warn!(
-                    "Date incompatibility.
-                Tag {tag:?} does not satisfy the maximum date {max_date:?}"
-                );
-                return Ok(false);
-            }
-        }
-        Some(Tag::Archive(s)) => {
-            let tag_date = DateTime::parse_from_rfc3339(s)?;
-            // tag date is too early
-            if let Some(min_date) = compatibility.min_date {
-                if tag_date < min_date {
-                    warn!(
-                        "Date incompatibility.
-                        Tag {tag_date:?} does not satisfy the minimum date {min_date:?}"
-                    );
-                    return Ok(false);
-                }
-            }
-            // tag date is too late
-            if let Some(max_date) = compatibility.max_date {
-                if tag_date > max_date {
-                    warn!(
-                        "Date incompatibility.
-                    Tag {tag_date:?} does not satisfy the maximum date {max_date:?}"
-                    );
-                    return Ok(false);
-                }
-            }
-        }
-        _ => (),
-    }
-
-    Ok(true)
-}
-
 /// A summary of how compatibile a [`Dataset`] is with a [`CLI`] version and date.
 ///
 ///  ## Examples
@@ -454,7 +338,7 @@ pub fn is_compatible(name: Option<&Name>, tag: Option<&Tag>) -> Result<bool, Rep
 /// let c = Compatibility { min_date, max_date, cli_version};
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Compatibility {
     /// The minimum date for the dataset.
@@ -463,12 +347,6 @@ pub struct Compatibility {
     pub max_date: Option<DateTime<Utc>>,
     /// The CLI semantic version constraint.
     pub cli_version: Option<String>,
-}
-
-impl Default for Compatibility {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl Compatibility {
@@ -485,6 +363,107 @@ impl Compatibility {
     /// ```
     pub fn new() -> Self {
         Compatibility { min_date: None, max_date: None, cli_version: None }
+    }
+
+    /// Returns the [`Compatibility`] of a named [`Dataset`].
+    ///
+    ///  ## Examples
+    ///
+    /// ```
+    /// use rebar::dataset::{Compatibility, Name};
+    /// use chrono::NaiveDate;
+    ///
+    /// Compatibility::get_compatibility(&Name::SarsCov2)?;
+    /// Compatibility::get_compatibility(&Name::Toy1)?;
+    /// Compatibility::get_compatibility(&Name::Custom)?;
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
+    pub fn get_compatibility(name: &Name) -> Result<Compatibility, Report> {
+        let mut compatibility = Compatibility::new();
+        #[allow(clippy::single_match)]
+        match name {
+            Name::SarsCov2 => {
+                compatibility.min_date =
+                    Some(DateTime::parse_from_rfc3339("2023-02-09T00:00:00Z")?.into())
+            }
+            Name::Toy1 => compatibility.cli_version = Some(">=0.2.0".to_string()),
+            //Name::Custom => compatibility.cli_version = Some(">=0.3.0".to_string()),
+            _ => compatibility.cli_version = None,
+        }
+        Ok(compatibility)
+    }
+
+    /// Returns true if the [`Dataset`] [`Name`] and [`Tag`] are compatible with each other, and the CLI version.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// use rebar::dataset::*;
+    /// use std::str::FromStr;
+    ///
+    /// assert_eq!(true,  Compatibility::is_compatible(Some(&Name::SarsCov2), Some(&Tag::Latest))?);
+    /// assert_eq!(true,  Compatibility::is_compatible(Some(&Name::SarsCov2), Some(&Tag::from_str("2023-06-06")?))?);
+    /// assert_eq!(false, Compatibility::is_compatible(Some(&Name::SarsCov2), Some(&Tag::from_str("2023-02-08")?))?);
+    /// assert_eq!(true,  Compatibility::is_compatible(Some(&Name::Toy1),     None)?);
+    /// # Ok::<(), color_eyre::eyre::Report>(())
+    /// ```
+    pub fn is_compatible(name: Option<&Name>, tag: Option<&Tag>) -> Result<bool, Report> {
+        let compatibility = match name {
+            Some(name) => Compatibility::get_compatibility(name)?,
+            None => Compatibility::default(),
+        };
+
+        // Check CLI Version
+        if let Some(cli_version) = compatibility.cli_version {
+            let current_version = semver::Version::parse(env!("CARGO_PKG_VERSION"))?;
+            let required_version = semver::VersionReq::parse(&cli_version)?;
+            if !required_version.matches(&current_version) {
+                warn!(
+                    "CLI version incompatibility.
+                    Current version {current_version} does not satisfy the required version {required_version}",
+                    current_version=current_version.to_string()
+                    );
+                return Ok(false);
+            }
+        }
+        // Check Tag
+        match tag {
+            Some(Tag::Latest) => {
+                if let Some(max_date) = compatibility.max_date {
+                    warn!(
+                        "Date incompatibility.
+                    Tag {tag:?} does not satisfy the maximum date {max_date:?}"
+                    );
+                    return Ok(false);
+                }
+            }
+            Some(Tag::Archive(s)) => {
+                let tag_date = DateTime::parse_from_rfc3339(s)?;
+                // tag date is too early
+                if let Some(min_date) = compatibility.min_date {
+                    if tag_date < min_date {
+                        warn!(
+                            "Date incompatibility.
+                            Tag {tag_date:?} does not satisfy the minimum date {min_date:?}"
+                        );
+                        return Ok(false);
+                    }
+                }
+                // tag date is too late
+                if let Some(max_date) = compatibility.max_date {
+                    if tag_date > max_date {
+                        warn!(
+                            "Date incompatibility.
+                        Tag {tag_date:?} does not satisfy the maximum date {max_date:?}"
+                        );
+                        return Ok(false);
+                    }
+                }
+            }
+            _ => (),
+        }
+
+        Ok(true)
     }
 }
 
