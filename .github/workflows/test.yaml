@@ -27,7 +27,7 @@ jobs:
         run: rustup update nightly
 
       - name: install llvm-cov
-        run: cargo +nightly install llvm-cov@0.6.4
+        run: cargo +nightly install cargo-llvm-cov@0.6.4
 
       - name: generate code coverage
         run: cargo +nightly llvm-cov --doc --all-features --workspace --lcov --output-path lcov.info
