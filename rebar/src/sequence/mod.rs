@@ -2,9 +2,7 @@ use color_eyre::eyre::{eyre, ContextCompat, Report, Result, WrapErr};
 use color_eyre::Help;
 use indicatif::{style::ProgressStyle, ProgressBar};
 use noodles::{core::Position, fasta};
-#[cfg(feature = "rayon")]
 use rayon::iter::{ParallelBridge, ParallelIterator};
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::{
     default::Default,
@@ -19,17 +17,16 @@ use std::{
 // ----------------------------------------------------------------------------
 
 /// Collection of characters that represent sequence bases.
-#[derive(Clone, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub enum Alphabet {
     #[default]
-    #[cfg_attr(feature = "serde", serde(rename = "dna"))]
+    #[serde(rename = "dna")]
     Dna,
-    #[cfg_attr(feature = "serde", serde(rename = "rna"))]
+    #[serde(rename = "rna")]
     Rna,
-    #[cfg_attr(feature = "serde", serde(rename = "deletion"))]
+    #[serde(rename = "deletion")]
     Deletion,
-    #[cfg_attr(feature = "serde", serde(rename = "missing"))]
+    #[serde(rename = "missing")]
     Missing,
 }
 
@@ -61,8 +58,7 @@ impl Display for Alphabet {
 // Deletion
 // ----------------------------------------------------------------------------
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct Deletion {
     pub coord: usize,
     pub reference: char,
@@ -73,8 +69,7 @@ pub struct Deletion {
 // Substitution
 // ----------------------------------------------------------------------------
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Deserialize, Serialize)]
 pub struct Substitution {
     pub coord: usize,
     pub reference: char,
@@ -85,8 +80,7 @@ pub struct Substitution {
 // Record
 // ----------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct Record {
     pub id: String,
     pub sequence: Vec<char>,
@@ -116,8 +110,8 @@ impl Record {
     /// ## Arguments
     ///
     /// - `record` - [`noodles`] [`fasta::Record`]
+    /// - `alphabet` - Genetic [`Alphabet`] to use.
     /// - `reference` - Optional [`Record`] of the reference genome.
-    /// - `retain_full_sequence` - `true` if the full sequence should be stored, otherwise discard. Can be useful if memory is limited.
     ///
     /// ## Examples
     ///
@@ -125,23 +119,33 @@ impl Record {
     /// # use tokio_test::{block_on, assert_ok};
     /// use rebar::{sequence, utils};
     ///
-    /// // download a fasta
+    /// // download a test fasta
     /// # assert_ok!(block_on(async {
     /// let url = "https://raw.githubusercontent.com/nextstrain/ncov/v13/data/references_sequences.fasta";
     /// let path = "test/utils/download_file/reference.fasta";
     /// utils::download_file(&url, &path).await?;
     ///
-    /// // read the fasta with a progress bar
-    /// let progress = true;
-    /// let (mut reader, count) = sequence::read(&path, progress)?;
+    /// // create a reader (iterator) over sequence records
+    /// let (mut reader, _count) = sequence::get_reader(&path, false)?;
+    /// // extract the first record
+    /// let record = reader.records().next().unwrap()?;
+    /// // convert to rebar record
+    /// let sample_1 = sequence::Record::from_noodles(record, sequence::Alphabet::Dna, None)?;
+    /// assert_eq!(sample_1.id, "Wuhan/Hu-1/2019");
+    ///
+    /// // read in another record and compare it to the first
+    /// let record = reader.records().next().unwrap()?;
+    /// let sample_2 = sequence::Record::from_noodles(record, sequence::Alphabet::Dna, Some(&sample_1))?;
+    /// assert_eq!(sample_2.id, "21L");
+    /// assert_eq!(sample_2.substitutions.len(), 218);
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// # }));
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
     pub fn from_noodles(
         record: fasta::Record,
-        reference: Option<&Record>,
         alphabet: Alphabet,
+        reference: Option<&Record>,
     ) -> Result<Self, Report> {
         let mut sample = Record { alphabet, ..Default::default() };
 
@@ -299,10 +303,11 @@ where
         .wrap_err(format!("Failed to read: {path:?}"))?;
 
     // decide if we are using rayon multithreading
-    let num_records = if cfg!(rayon) {
-        reader.records().par_bridge().inspect(|_| f_update(&progress_bar, progress)).count()
-    } else {
-        reader.records().inspect(|_| f_update(&progress_bar, progress)).count()
+    let num_records = match cfg!(rayon) {
+        true => {
+            reader.records().par_bridge().inspect(|_| f_update(&progress_bar, progress)).count()
+        }
+        false => reader.records().inspect(|_| f_update(&progress_bar, progress)).count(),
     };
     progress_bar.finish();
 

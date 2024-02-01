@@ -5,8 +5,8 @@ pub mod dataset;
 // // pub mod run;
 // // pub mod simulate;
 
+use crate::RunArgs;
 use clap::{Parser, Subcommand, ValueEnum};
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
@@ -48,12 +48,11 @@ use std::fmt::{Display, Formatter};
 ///     "verbosity": "Info"
 ///   }
 /// ```
-#[derive(Debug, Parser)]
+#[derive(Debug, Deserialize, Parser, Serialize)]
 #[clap(name = "rebar", author, version)]
 #[clap(about = "rebar detects recombination between genomics sequences using mutational barcodes.")]
 #[clap(after_help = "Long help message")]
 #[clap(trailing_var_arg = true)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Cli {
     #[clap(subcommand)]
     /// Pass CLI arguments to a particular [Command].
@@ -70,8 +69,7 @@ pub struct Cli {
 }
 
 /// CLI [commands](#variants). Used to decide which runtime [Command](#variants) the CLI arguments should be passed to.
-#[derive(Debug, Subcommand)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Deserialize, Serialize, Subcommand)]
 pub enum Command {
     /// Pass CLI arguments to the [Dataset](dataset::Command) subcommands.
     /// ## Examples
@@ -84,7 +82,8 @@ pub enum Command {
     /// ```
     #[clap(about = "List or download available datasets.")]
     Dataset(dataset::Args),
-    //Run(run::Args),
+    #[clap(about = "Run recombination detection.")]
+    Run(RunArgs),
     //Plot(plot::Args),
     //Simulate(simulate::Args),
 }
@@ -94,9 +93,7 @@ pub enum Command {
 // -----------------------------------------------------------------------------
 
 /// The output verbosity level.
-/// #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, Default, ValueEnum)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ValueEnum)]
 pub enum Verbosity {
     #[default]
     Info,

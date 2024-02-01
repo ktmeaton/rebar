@@ -3,12 +3,10 @@
 use crate::dataset::{DownloadArgs, ListArgs};
 use clap::{Parser, Subcommand};
 // use rebar_dataset::{download, list};
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// CLI arguments to list or download available datasets.
-#[derive(Debug, Parser)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Deserialize, Parser, Serialize)]
 #[clap(about = "List or download available datasets.")]
 pub struct Args {
     /// Dataset command: List, Download
@@ -17,8 +15,7 @@ pub struct Args {
 }
 
 /// CLI dataset [commands](#variants). Used to decide which dataset method the CLI arguments should be passed to.
-#[derive(Debug, Subcommand)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Deserialize, Serialize, Subcommand)]
 pub enum Command {
     // ------------------------------------------------------------------------
     /// Pass CLI arguments to the dataset [list](crate::dataset::list()) method.

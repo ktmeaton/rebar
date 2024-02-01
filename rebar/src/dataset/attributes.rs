@@ -6,7 +6,6 @@ use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::{eyre, Report, Result, WrapErr};
 use color_eyre::Help;
 use log::warn;
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::default::Default;
@@ -29,8 +28,7 @@ use strum::EnumIter;
 ///
 /// let attributes = Attributes { name: Name::SarsCov2, tag:  Tag::Latest, .. Default::default()};
 /// ```
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Attributes {
     /// Dataset [Name].
     pub name: Name,
@@ -94,7 +92,6 @@ impl Attributes {
     /// # assert!(attr_out.write(&"/root").is_err());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
-    #[cfg(feature = "serde")]
     pub fn read<P>(path: &P) -> Result<Attributes, Report>
     where
         P: AsRef<Path> + Debug,
@@ -121,7 +118,6 @@ impl Attributes {
     /// # assert!(attributes.write(&"/root").is_err());
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
-    #[cfg(feature = "serde")]
     pub fn write<P>(&self, path: &P) -> Result<(), Report>
     where
         P: AsRef<Path> + Debug,
@@ -141,8 +137,7 @@ impl Attributes {
 /// The [`Name`] of a [`Dataset`].
 ///
 /// Might represent a particular organism (ex. sars-cov-2) or simulated data for testing (toy1).
-#[derive(Clone, Copy, Debug, Default, EnumIter, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Debug, Default, EnumIter, PartialEq, Serialize, Deserialize)]
 pub enum Name {
     /// Severe Acute Respiratory Syndrome Coronavirus 2 (SARS-CoV-2)
     ///
@@ -150,20 +145,20 @@ pub enum Name {
     /// let name = rebar::dataset::Name::SarsCov2;
     /// ```
     ///
-    #[cfg_attr(feature = "serde", serde(rename = "sars-cov-2"))]
+    #[serde(rename = "sars-cov-2")]
     SarsCov2,
     /// Toy dataset 1 for testing.
     /// ```
     /// let name = rebar::dataset::Name::Toy1;
     /// ```
-    #[cfg_attr(feature = "serde", serde(rename = "toy1"))]
+    #[serde(rename = "toy1")]
     Toy1,
     /// Custom dataset
     /// ```
     /// let name = rebar::dataset::Name::Custom;
     /// ```
     #[default]
-    #[cfg_attr(feature = "serde", serde(rename = "custom"))]
+    #[serde(rename = "custom")]
     Custom,
 }
 
@@ -214,8 +209,7 @@ impl FromStr for Name {
 /// The version [`Tag`] of a [`Dataset`].
 ///
 /// Typically identifies the date when source files were downloaded.
-#[derive(Clone, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum Tag {
     /// For a [`Dataset`] where files were downloaded from the latest possible available.
     ///
@@ -338,8 +332,7 @@ impl FromStr for Tag {
 /// let c = Compatibility { min_date, max_date, cli_version};
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
-#[derive(Clone, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Compatibility {
     /// The minimum date for the dataset.
     pub min_date: Option<DateTime<Utc>>,
@@ -478,8 +471,7 @@ impl Compatibility {
 /// - `D` - Date, recommended [`chrono::NaiveDate`].
 /// - `P` - File path.
 ///
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VersionedFile {
     // Local name of the file
     pub local: PathBuf,

@@ -165,7 +165,6 @@ where
 /// # assert!(path.exists());
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
-#[cfg(feature = "serde")]
 pub fn edge_cases<P>(_tag: &Tag, output_dir: &P) -> Result<VersionedFile, Report>
 where
     P: AsRef<Path> + Clone + Debug,

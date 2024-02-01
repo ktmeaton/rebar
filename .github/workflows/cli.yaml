@@ -1,0 +1,160 @@
+name: CLI
+
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    branches:
+      - '*'
+  release:
+    types: [published]
+
+
+env:
+  GITHUB_USERNAME: ${{ github.actor }}
+  GITHUB_TOKEN: ${{ github.token }}
+  DOCKER_IMAGE: "ghcr.io/${{ github.repository }}"
+  DATASET_TAG: "2023-11-30"
+
+jobs:
+
+  build:
+    uses: ./.github/workflows/build.yaml
+
+  # ---------------------------------------------------------------------------
+  cli:
+
+    needs: build
+    if: ${{ always() }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # linux
+          - arch: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            binary: rebar
+          # windows
+          - arch: x86_64-pc-windows-gnu
+            os: windows-latest
+            binary: rebar.exe
+          # macOS
+          - arch: x86_64-apple-darwin
+            os: macos-latest
+            binary: rebar
+          # docker
+          - arch: docker
+            os: ubuntu-latest
+            binary: rebar
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+
+      - name: download build output
+        uses: actions/download-artifact@v3
+        with:
+          name: rebar-${{ matrix.arch }}
+          path: target/${{ matrix.arch }}/release
+
+      # parse tag from load output, PR have unusual formats, also sometimes multiple tags
+      - name: load docker image
+        if:  matrix.arch == 'docker'
+        run: |
+          load=$(docker load --input target/${{ matrix.arch }}/release/rebar.tar | tee /dev/stderr)
+          echo -e $load
+          TAG=$(echo -e $load | sed 's/Loaded image: //g' | head -n 1 | cut -d ":" -f 2 | cut -d " " -f 1)
+          echo DOCKER_TAG="$TAG" >> $GITHUB_ENV
+
+      # ------------------------------------------------------------------------
+      # How we execute the program depends on the architecture
+
+      - name: set run command (windows)
+        if: matrix.os == 'windows-latest'
+        run: echo RUN_CMD=".\${{ matrix.binary }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: set run command (docker)
+        if: matrix.arch == 'docker'
+        run: echo RUN_CMD="docker run -v .:/rebar -e GITHUB_USERNAME=${{ github.actor }} -e GITHUB_TOKEN=${{ github.token }} "$DOCKER_IMAGE:$DOCKER_TAG" ${{ matrix.binary }}" >> $GITHUB_ENV
+
+      - name: set run command (linux, mac)
+        if: matrix.arch == 'x86_64-unknown-linux-musl' || matrix.arch == 'x86_64-apple-darwin'
+        run: echo RUN_CMD="./${{ matrix.binary }}" >> $GITHUB_ENV
+
+      - name: check run command
+        run: echo ${{ env.RUN_CMD }}
+
+      # ------------------------------------------------------------------------
+      # Install
+
+      - name: install
+        if: ${{ matrix.arch != 'docker' }}
+        run: |
+          chmod +x target/${{ matrix.arch }}/release/${{ matrix.binary }}
+          cp target/${{ matrix.arch }}/release/${{ matrix.binary }} .
+          ${{ env.RUN_CMD }} --help
+
+      - name: data download (non-windows)
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          wget https://raw.githubusercontent.com/phac-nml/rebar/${{ github.sha }}/data/example2.fasta
+
+      - name: data download (windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          $url = "https://raw.githubusercontent.com/phac-nml/rebar/${{ github.sha }}/data/example2.fasta"
+          $client = New-Object System.Net.WebClient
+          $client.DownloadFile($url, "example2.fasta")
+
+      - name: dataset list
+        run: |
+          ${{ env.RUN_CMD }} dataset list
+
+      # - name: dataset download
+      #   run: |
+      #     ${{ env.RUN_CMD }} dataset download --name sars-cov-2 --tag ${{ env.DATASET_TAG }} --output-dir dataset/sars-cov-2/${{ env.DATASET_TAG }}
+
+      # - name: toy1
+      #   run: |
+      #     ${{ env.RUN_CMD }} dataset download --output-dir dataset/toy1 --name toy1 --tag custom
+      #     ${{ env.RUN_CMD }} run  --dataset-dir dataset/toy1 --output-dir output/toy1 --populations "*" --mask 0,0 --min-length 1
+      #     ${{ env.RUN_CMD }} plot --annotations dataset/sars-cov-2/${{ env.DATASET_TAG }}/annotations.tsv --run-dir output/toy1
+
+      # - name: alignment
+      #   run: |
+      #     ${{ env.RUN_CMD }} run  --dataset-dir dataset/sars-cov-2/${{ env.DATASET_TAG }} --output-dir output/alignment --alignment example2.fasta
+      #     ${{ env.RUN_CMD }} plot --annotations dataset/sars-cov-2/${{ env.DATASET_TAG }}/annotations.tsv --run-dir output/alignment
+
+      # - name: populations
+      #   run: |
+      #     ${{ env.RUN_CMD }} run  --dataset-dir dataset/sars-cov-2/${{ env.DATASET_TAG }} --output-dir output/populations --populations "*"
+      #     ${{ env.RUN_CMD }} plot --annotations dataset/sars-cov-2/${{ env.DATASET_TAG }}/annotations.tsv --run-dir output/populations
+
+      # - name: validate (non-windows)
+      #   if: ${{ matrix.os != 'windows-latest' }}
+      #   run: |
+      #     if [[ $(grep "fail" output/toy1/linelist.tsv) ]]; then exit 1; fi
+      #     if [[ $(grep "fail" output/alignment/linelist.tsv) ]]; then exit 1; fi
+      #     if [[ $(grep "fail" output/populations/linelist.tsv) ]]; then exit 1; fi
+
+      # - name: validate (windows)
+      #   if: ${{ matrix.os == 'windows-latest' }}
+      #   run: |
+      #     if(findstr fail output\example1\linelist.tsv){ exit 1}
+      #     if(findstr fail output\example2\linelist.tsv){ exit 1}
+      #     if(findstr fail output\toy1\linelist.tsv){ exit 1}
+
+      # - name: upload output
+      #   uses: actions/upload-artifact@v3
+      #   if: always()
+      #   with:
+      #     name: output-${{ matrix.arch }}
+      #     path: |
+      #       output/alignment
+      #       output/toy1
+      #       output/populations/linelist.tsv
+
+      #     if-no-files-found: error
+      #     retention-days: 7

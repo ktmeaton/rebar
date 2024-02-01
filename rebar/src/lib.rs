@@ -14,6 +14,9 @@ pub mod utils;
 pub use crate::cli::Cli;
 #[doc(inline)]
 pub use crate::dataset::Dataset;
+
+#[doc(inline)]
+pub use crate::run::{run, RunArgs};
 // #[doc(inline)]
 // pub use table::Table;
 // #[doc(inline)]

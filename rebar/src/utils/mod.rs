@@ -1,6 +1,5 @@
 use color_eyre::eyre::{eyre, ContextCompat, Report, Result, WrapErr};
 use color_eyre::Help;
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::convert::AsRef;
 use std::fmt::{Debug, Display, Formatter};
@@ -29,8 +28,7 @@ where
     Ok(())
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub enum Decompress {
     Zst,
 }
@@ -75,7 +73,6 @@ impl Display for Decompress {
 /// # }));
 /// # Ok::<(), color_eyre::eyre::Report>(())
 /// ```
-#[cfg(feature = "download")]
 pub fn decompress_file<P>(path: &P, decompress: Option<Decompress>) -> Result<PathBuf, Report>
 where
     P: AsRef<Path> + Debug,

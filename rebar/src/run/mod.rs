@@ -3,36 +3,31 @@
 #[cfg(feature = "cli")]
 use clap::{Args as ClapArgs, Parser};
 use color_eyre::eyre::{Report, Result, WrapErr};
-//use either::*;
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
     path::{Path, PathBuf},
 };
 
+/// Detect recombination in a dataset population and/or input alignment.
+pub fn run(_args: &RunArgs) -> Result<(), Report> {
+    Ok(())
+}
 /// ---------------------------------------------------------------------------
-/// Structs
+/// RunArgs
 /// ---------------------------------------------------------------------------
 
 /// Detect recombination in a dataset population and/or input alignment.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "cli", derive(Parser))]
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct RunArgs {
     /// Dataset directory.
     #[cfg_attr(feature = "cli", clap(short = 'd', long, required = true))]
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip_serializing_if = "RunArgs::is_default_dataset_dir", skip_deserializing)
-    )]
+    #[serde(skip_serializing_if = "RunArgs::is_default_dataset_dir", skip_deserializing)]
     pub dataset_dir: PathBuf,
 
     #[cfg_attr(feature = "cli", command(flatten))]
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip_serializing_if = "RunArgs::is_default_input", skip_deserializing)
-    )]
+    #[serde(skip_serializing_if = "RunArgs::is_default_input", skip_deserializing)]
     pub input: Input,
 
     /// Restrict parent search to just these candidate parents.
@@ -84,15 +79,12 @@ pub struct RunArgs {
     ///
     /// If the directory does not exist, it will be created.
     #[cfg_attr(feature = "cli", clap(short = 'o', long, required = true))]
-    #[cfg_attr(
-        feature = "serde",
-        serde(skip_serializing_if = "RunArgs::is_default_output_dir", skip_deserializing)
-    )]
+    #[serde(skip_serializing_if = "RunArgs::is_default_output_dir", skip_deserializing)]
     pub output_dir: PathBuf,
 
     /// Number of CPU threads to use.
     #[cfg_attr(feature = "cli", clap(short = 't', long, default_value_t = RunArgs::default().threads))]
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[serde(skip)]
     pub threads: usize,
 }
 
@@ -167,7 +159,6 @@ impl RunArgs {
     }
 
     /// Reads [`RunArgs`] from a JSON file.
-    #[cfg(feature = "serde")]
     pub fn read<P>(path: &P) -> Result<Vec<RunArgs>, Report>
     where
         P: AsRef<Path> + Debug,
@@ -185,10 +176,9 @@ impl RunArgs {
     ///
     /// ```rust
     /// use rebar::RunArgs;
-    /// RunArgs::write(RunArgs::default(), &"test/run/RunArgs/run_args.json")?;
+    /// RunArgs::write(&RunArgs::default(), &"test/run/RunArgs/run_args.json")?;
     /// # Ok::<(), color_eyre::eyre::Report>(())
     /// ```
-    #[cfg(feature = "serde")]
     pub fn write<P>(&self, path: &P) -> Result<(), Report>
     where
         P: AsRef<Path> + Debug,
@@ -202,15 +192,16 @@ impl RunArgs {
     }
 }
 
-#[derive(ClapArgs, Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[group(required = true, multiple = true)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "cli", derive(ClapArgs))]
+#[cfg_attr(feature = "cli", group(required = true, multiple = true))]
 pub struct Input {
     /// Input fasta alignment.
-    #[arg(long, value_delimiter = ',')]
+    #[cfg_attr(feature = "cli", arg(long, value_delimiter = ','))]
     pub populations: Option<Vec<String>>,
 
     /// Input dataset population.
-    #[arg(long)]
+    #[cfg_attr(feature = "cli", arg(long))]
     pub alignment: Option<PathBuf>,
 }
 

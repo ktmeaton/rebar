@@ -5,7 +5,7 @@ use color_eyre::eyre::{Report, Result};
 use rebar::{
     cli::dataset::Command::{Download, List},
     cli::Command,
-    Cli, Dataset,
+    Cli,
 };
 
 #[tokio::main]
@@ -32,12 +32,12 @@ async fn main() -> Result<(), Report> {
             // Dataset
             Command::Dataset(args) => match args.command {
                 // List datasets available for download as table
-                List(args) => println!("{}", Dataset::list(&args)?),
+                List(args) => println!("{}", rebar::Dataset::list(&args)?),
                 // Download available dataset
-                Download(args) => Dataset::download(&args).await?,
+                Download(args) => rebar::Dataset::download(&args).await?,
             },
-            // // Run
-            // Command::Run(mut args) => rebar::run::run(&mut args)?,
+            // Run
+            Command::Run(args) => rebar::run(&args)?,
             // // Plot
             // Command::Plot(args) => rebar::plot::plot(&args)?,
             // // Simulate

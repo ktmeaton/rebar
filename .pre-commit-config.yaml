@@ -37,7 +37,6 @@ repos:
     -   id: fmt
     -   id: cargo-check
     -   id: clippy
-        args: ['--all-features']
 
   # - repo: local
   #   hooks:

@@ -11,9 +11,10 @@ use crate::sequence;
 #[cfg(feature = "cli")]
 use clap::Parser;
 use color_eyre::eyre::{eyre, ContextCompat, Report, Result, WrapErr};
-use log::{info, warn};
+use log::info;
+#[cfg(feature = "download")]
+use log::warn;
 use rebar_phylo::{FromJson, Phylogeny};
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
@@ -25,8 +26,7 @@ use tabled::Table;
 // Dataset
 
 /// A collection of parent population sequences aligned to a reference.
-#[derive(Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Dataset {
     /// [`Dataset`] [`Attributes`].
     pub attributes: Attributes,
@@ -282,7 +282,7 @@ impl Dataset {
             .wrap_err(format!("Failed to parse first fasta record: {path:?}"))?;
         // convert from noodles fasta to rebar
         dataset.reference =
-            sequence::Record::from_noodles(record, None, dataset.attributes.alphabet.clone())?;
+            sequence::Record::from_noodles(record, dataset.attributes.alphabet.clone(), None)?;
 
         // Populations
         let path = dataset_dir.join(&dataset.attributes.populations.local);
@@ -295,8 +295,8 @@ impl Dataset {
                 let record = match result {
                     Ok(record) => sequence::Record::from_noodles(
                         record,
-                        Some(&dataset.reference),
                         dataset.attributes.alphabet.clone(),
+                        Some(&dataset.reference),
                     )?,
                     Err(_) => Err(eyre!("Failed to parse populations record: {result:?}"))?,
                 };
@@ -327,8 +327,7 @@ impl Dataset {
 // ----------------------------------------------------------------------------
 
 /// Download dataset arguments.
-#[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "cli", derive(Parser))]
 pub struct DownloadArgs {
     /// [`Dataset`] [`Name`].
@@ -374,9 +373,8 @@ impl DownloadArgs {
 // ----------------------------------------------------------------------------
 
 /// Arguments for listing datasets available for download.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "cli", derive(Parser))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListArgs {
     /// [`Dataset`] [`Name`].
     #[cfg_attr(feature = "cli", clap(short = 'n', long))]
