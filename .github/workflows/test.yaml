@@ -39,6 +39,32 @@ jobs:
           fail_ci_if_error: true
 
   # ---------------------------------------------------------------------------
+  docs:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+
+      - name: rebar-phylo docs
+        run: cargo rustdoc --package rebar-phylo -- --html-in-header=assets/docs/header.html --html-after-content=assets/docs/after-content.html
+
+      - name: rebar docs
+        run: cargo rustdoc --package rebar -- --html-in-header=assets/docs/header.html --html-after-content=assets/docs/after-content.html
+
+      - name: upload docs
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: docs
+          path: |
+            target/doc/rebar
+            target/doc/rebar_phylo
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
   unit:
 
     runs-on: ubuntu-latest
