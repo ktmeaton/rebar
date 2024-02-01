@@ -147,7 +147,7 @@ jobs:
       #     if(findstr fail output\toy1\linelist.tsv){ exit 1}
 
       # - name: upload output
-      #   uses: actions/upload-artifact@v3
+      #   uses: actions/upload-artifact@v4
       #   if: always()
       #   with:
       #     name: output-${{ matrix.arch }}

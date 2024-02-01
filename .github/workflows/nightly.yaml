@@ -85,7 +85,7 @@ jobs:
           if [[ $(grep "fail" output/sars-cov-2/nightly/validate/linelist.tsv) ]]; then exit 1; fi
 
       - name: upload
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: validate-linelist_${{ matrix.arch }}

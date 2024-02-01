@@ -10,14 +10,14 @@ on:
   release:
     types: [published]
 
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   # ---------------------------------------------------------------------------
   coverage:
 
     runs-on: ubuntu-latest
-    env:
-      CARGO_TERM_COLOR: always
     steps:
 
       - name: checkout repo
@@ -33,7 +33,7 @@ jobs:
         run: cargo +nightly llvm-cov --doc --all-features --workspace --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           files: lcov.info
           fail_ci_if_error: true
@@ -54,7 +54,7 @@ jobs:
         run: cargo rustdoc --package rebar -- --html-in-header=assets/docs/header.html --html-after-content=assets/docs/after-content.html
 
       - name: upload docs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: docs
@@ -68,7 +68,6 @@ jobs:
   unit:
 
     runs-on: ubuntu-latest
-
     steps:
       - name: checkout repo
         uses: actions/checkout@v4

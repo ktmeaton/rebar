@@ -60,7 +60,7 @@ jobs:
           args: --best --lzma
 
       - name: upload binary
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: rebar-${{ inputs.arch }}
           path: target/${{ inputs.arch }}/release/${{ inputs.binary }}
